@@ -12,12 +12,12 @@ replace (
 require (
 	github.com/datatrails/go-datatrails-common v0.30.0
 	github.com/datatrails/go-datatrails-merklelog/massifs v0.0.0-00010101000000-000000000000
+	github.com/datatrails/go-datatrails-merklelog/mmr v0.4.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
 )
 
 require (
-	github.com/datatrails/go-datatrails-merklelog/mmr v0.4.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/ldclabs/cose/go v0.0.0-20221214142927-d22c1cfc2154 // indirect

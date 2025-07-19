@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
-	"github.com/robinbryce/go-merklelog-testing/mmrtesting"
+	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 )
 
 type TestContext interface {
