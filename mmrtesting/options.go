@@ -1,17 +1,14 @@
+// Package mmrtesting provides shared test support for merklelog's
 package mmrtesting
 
 import (
 	"fmt"
 	"math/rand"
 
+	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/google/uuid"
 )
-
-// Option is a generic option type used for storage implementation testing.
-// Implementations type assert to Options target record and if that fails the
-// expectation they ignore the options
-type Option func(any)
 
 // TestOptions holds options generic for all storage implementations.
 type TestOptions struct {
@@ -26,7 +23,6 @@ type TestOptions struct {
 	LeafGenerator   LeafGenerator
 	// Container       string        // can be "" defaults to TestLablePrefix
 	// DebugLevel      string        // defaults to INFO
-
 }
 
 // WithDefaults sets the default values for TestOptions.
@@ -34,7 +30,7 @@ type TestOptions struct {
 // If you want to pre-empt it's choices preceeed it with the specific option.
 // If you want to derive from a default, add your option after it.
 // Typically WithStartTimeMS() would be the first option set, as that seeds the RNG.
-func WithDefaults() Option {
+func WithDefaults() massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
 		if !ok {
@@ -76,7 +72,7 @@ func WithDefaults() Option {
 // determines the seed for the random number generator used in tests.  As with
 // any option that should pre-empt the defaults,it must be placed before
 // WithDefaults to take effect.
-func WithStartTimeMS(startTimeMS int64) Option {
+func WithStartTimeMS(startTimeMS int64) massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
 		if !ok {
@@ -86,7 +82,7 @@ func WithStartTimeMS(startTimeMS int64) Option {
 	}
 }
 
-func WithLeafGenerator(leafGenerator LeafGenerator) Option {
+func WithLeafGenerator(leafGenerator LeafGenerator) massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
 		if !ok {
@@ -96,9 +92,9 @@ func WithLeafGenerator(leafGenerator LeafGenerator) Option {
 	}
 }
 
-// WithTestLebelPrefix pre-empts how the tests are identified. it is also
+// WithTestLabelPrefix pre-empts how the tests are identified. it is also
 // typically used to isolate storage for integration tests
-func WithTestLabelPrefix(prefix string) Option {
+func WithTestLabelPrefix(prefix string) massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
 		if !ok {
@@ -108,7 +104,7 @@ func WithTestLabelPrefix(prefix string) Option {
 	}
 }
 
-func WithLogID(logID storage.LogID) Option {
+func WithLogID(logID storage.LogID) massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
 		if !ok {

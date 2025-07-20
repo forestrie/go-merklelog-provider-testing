@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/datatrails/go-datatrails-merklelog/mmr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -399,7 +398,7 @@ func PeakStackHeight4Massif2to3Size63Test(tc TestContext) {
 	logID := cfg.LogID
 
 	MassifHeight := uint8(4)
-	storageOpts := storage.Options{LogID: logID, MassifHeight: MassifHeight}
+	storageOpts := massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight}
 
 	committer, err := tc.NewMassifCommitter(storageOpts)
 	require.NoError(t, err)

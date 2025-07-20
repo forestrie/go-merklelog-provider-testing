@@ -6,13 +6,12 @@ import (
 	"errors"
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/stretchr/testify/require"
 )
 
 func CommitLeaves(
 	ctx context.Context, tc TestContext,
-	committer storage.MassifCommitter,
+	committer massifs.MassifCommitter,
 	count uint64,
 ) error {
 	if count <= 0 {

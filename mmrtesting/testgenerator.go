@@ -63,7 +63,7 @@ func MMRTestingGenerateNumberedLeaf(base, i uint64) AddLeafArgs {
 // This means that we generate valid values for things like uuid based
 // identities and simulated time stamps, but the log telemetry from successive runs will
 // be usefuly stable.
-func NewTestGenerator(t *testing.T, cfg *TestOptions, opts ...Option) TestGenerator {
+func NewTestGenerator(t *testing.T, cfg *TestOptions, opts ...massifs.Option) TestGenerator {
 
 	g := TestGenerator{}
 	g.Init(t, cfg, opts...)
@@ -71,7 +71,7 @@ func NewTestGenerator(t *testing.T, cfg *TestOptions, opts ...Option) TestGenera
 }
 
 // Using the
-func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions, opts ...Option) {
+func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions, opts ...massifs.Option) {
 	if cfg == nil {
 		cfg = &TestOptions{}
 	}

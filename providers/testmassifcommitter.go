@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +21,7 @@ func StorageMassifCommitterFirstMassifTest(tc TestContext) {
 	logID := cfg.LogID
 
 	MassifHeight := uint8(3)
-	c, err := tc.NewMassifCommitter(storage.Options{LogID: logID, MassifHeight: MassifHeight})
+	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
 
 	var mc *massifs.MassifContext
@@ -44,7 +43,7 @@ func StorageMassifCommitterAddFirstTwoLeavesTest(tc TestContext) {
 
 	logID := cfg.LogID
 	MassifHeight := uint8(3)
-	c, err := tc.NewMassifCommitter(storage.Options{LogID: logID, MassifHeight: MassifHeight})
+	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
 
 	var mc *massifs.MassifContext
@@ -74,7 +73,7 @@ func StorageMassifCommitterExtendAndCommitFirstTest(tc TestContext) {
 
 	logID := cfg.LogID
 	MassifHeight := uint8(3)
-	c, err := tc.NewMassifCommitter(storage.Options{LogID: logID, MassifHeight: MassifHeight})
+	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
 
 	var mc *massifs.MassifContext
@@ -103,7 +102,7 @@ func StorageMassifCommitterCompleteFirstTest(tc TestContext) {
 
 	logID := cfg.LogID
 	MassifHeight := uint8(3)
-	c, err := tc.NewMassifCommitter(storage.Options{LogID: logID, MassifHeight: MassifHeight})
+	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
 
 	var mc *massifs.MassifContext
@@ -144,7 +143,7 @@ func StorageMassifCommitterOverfillSafeTest(tc TestContext) {
 
 	logID := cfg.LogID
 	MassifHeight := uint8(3)
-	c, err := tc.NewMassifCommitter(storage.Options{LogID: logID, MassifHeight: MassifHeight})
+	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
 
 	var mc *massifs.MassifContext
@@ -189,7 +188,7 @@ func StorageMassifCommitterThreeMassifsTest(tc TestContext) {
 	// Height of 3 means each massif will contain 7 nodes.
 	MassifHeight := uint8(3)
 
-	c, err := tc.NewMassifCommitter(storage.Options{LogID: logID, MassifHeight: MassifHeight})
+	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
 
 	// --- Massif 0

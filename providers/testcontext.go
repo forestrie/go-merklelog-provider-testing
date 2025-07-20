@@ -3,6 +3,7 @@ package providers
 import (
 	"testing"
 
+	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 )
@@ -16,8 +17,8 @@ type TestContext interface {
 	// GetLog() logger.Logger
 	// GetStorer() *azblob.Storer
 	// NewStorer() *azblob.Storer
-	NewMassifCommitter(opts storage.Options) (storage.MassifCommitter, error)
-	NewMassifContextReader(opts storage.Options) (storage.MassifContextReader, error)
+	NewMassifCommitter(opts massifs.StorageOptions) (massifs.MassifCommitter, error)
+	NewMassifContextReader(opts massifs.StorageOptions) (massifs.MassifContextReader, error)
 
 	// Generation methods
 	PadWithNumberedLeaves(data []byte, first, n int) []byte
