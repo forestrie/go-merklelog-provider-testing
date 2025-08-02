@@ -1,6 +1,7 @@
 package mmrtesting
 
 import (
+	"errors"
 	"crypto/sha256"
 	"encoding/binary"
 	"hash"
@@ -9,8 +10,10 @@ import (
 	"time"
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
+	"github.com/datatrails/go-datatrails-merklelog/massifs/snowflakeid"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -31,6 +34,7 @@ type TestGenerator struct {
 	T         *testing.T
 	StartTime time.Time
 	LastTime  time.Time
+	IDState   *snowflakeid.IDState
 }
 
 // AddLeafArgs is the return value of all LeafGenerator implementations. It
@@ -82,6 +86,32 @@ func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions, opts ...massifs.Opt
 	g.T = t
 	g.StartTime = time.UnixMilli(cfg.StartTimeMS)
 	g.LastTime = time.UnixMilli(cfg.StartTimeMS)
+	var err error
+	g.IDState, err = snowflakeid.NewIDState(snowflakeid.Config{
+		CommitmentEpoch: 1,
+		WorkerCIDR:      "0.0.0.0/16",
+		PodIP:           "10.0.0.1",
+	})
+	require.NoError(t, err)
+}
+
+func (g *TestGenerator) NextID() (uint64, error) {
+	var err error
+	var id uint64
+
+	var attempts = 2
+	var sleep = time.Millisecond * 2
+
+	for range attempts {
+		id, err = g.IDState.NextID()
+		if err != nil {
+			if !errors.Is(err, snowflakeid.ErrOverloaded) {
+				return 0, err
+			}
+			time.Sleep(sleep)
+		}
+	}
+	return id, nil
 }
 
 func (g *TestGenerator) GenerateNumberedLeafBatch(logID storage.LogID, base, count uint64) []AddLeafArgs {

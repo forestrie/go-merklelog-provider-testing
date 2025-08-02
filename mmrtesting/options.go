@@ -21,8 +21,20 @@ type TestOptions struct {
 	Rand            *rand.Rand
 	WordList        []string // used for generating random words, defaults to bip32WordList
 	LeafGenerator   LeafGenerator
+	MassifHeight    uint8 // defaults to 14
+	CommitmentEpoch uint8 // defaults to 1, which means latest, and is goog until 2038
+	LeafType        uint8
 	// Container       string        // can be "" defaults to TestLablePrefix
 	// DebugLevel      string        // defaults to INFO
+}
+func WithMassifHeight(height uint8) massifs.Option {
+	return func(o any) {
+		options, ok := o.(*TestOptions)
+		if !ok {
+			return
+		}
+		options.MassifHeight = height
+	}
 }
 
 // WithDefaults sets the default values for TestOptions.
@@ -35,6 +47,15 @@ func WithDefaults() massifs.Option {
 		options, ok := o.(*TestOptions)
 		if !ok {
 			return
+		}
+
+		// default leaf type plain is the zero value.
+
+		if options.MassifHeight == 0 {
+			options.MassifHeight = 14 // default to 14, which is the height
+		}
+		if options.CommitmentEpoch == 0 {
+			options.CommitmentEpoch = 1 // good until 2038 for real. irrelevant for tests as long as everyone uses the same value
 		}
 		if options.StartTimeMS == 0 {
 			options.StartTimeMS = (1698342521) * 1000
@@ -101,15 +122,5 @@ func WithTestLabelPrefix(prefix string) massifs.Option {
 			return
 		}
 		options.TestLabelPrefix = prefix
-	}
-}
-
-func WithLogID(logID storage.LogID) massifs.Option {
-	return func(o any) {
-		options, ok := o.(*TestOptions)
-		if !ok {
-			return
-		}
-		options.LogID = logID
 	}
 }
