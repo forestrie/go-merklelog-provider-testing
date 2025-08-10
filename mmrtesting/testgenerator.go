@@ -1,9 +1,9 @@
 package mmrtesting
 
 import (
-	"errors"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"hash"
 	"strings"
 	"testing"

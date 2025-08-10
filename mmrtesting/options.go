@@ -27,6 +27,7 @@ type TestOptions struct {
 	// Container       string        // can be "" defaults to TestLablePrefix
 	// DebugLevel      string        // defaults to INFO
 }
+
 func WithMassifHeight(height uint8) massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
