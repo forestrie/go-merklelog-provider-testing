@@ -10,7 +10,6 @@ import (
 	"github.com/datatrails/go-datatrails-common/cose"
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storageschema"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -39,7 +38,7 @@ func NewTestSignerContext(t *testing.T, issuer string) *TestSignerContext {
 func (s *TestSignerContext) SignedState(
 	logID storage.LogID, massifIndex uint64, state massifs.MMRState,
 ) (*cose.CoseSign1Message, massifs.MMRState, error) {
-	subject := fmt.Sprintf(storageschema.V1MMRBlobNameFmt, massifIndex)
+	subject := fmt.Sprintf(storage.V1MMRBlobNameFmt, massifIndex)
 	data, err := signState(s.RootSigner, s.CoseSigner, subject, state)
 	if err != nil {
 		return nil, massifs.MMRState{}, err
