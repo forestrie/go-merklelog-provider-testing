@@ -5,15 +5,14 @@ import (
 	"time"
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
+	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// StorageMassifCommitterFirstMassifTest covers creation of the first massive and related conditions
-func StorageMassifCommitterFirstMassifTest(tc TestContext) {
+// StorageMassifCommitterFirstMassifTest covers creation of the first massif with generic storage
+func StorageMassifCommitterFirstMassifTest(tc mmrtesting.ProviderTestContext) {
 	var err error
-	// tc := azmmrtesting.NewDefaultTestContext(t, mmrtesting.WithTestLabelPrefix("Test_mmrMassifCommitter_firstMassif"))
-
 	cfg := tc.GetTestCfg()
 	t := tc.GetT()
 	ctx := t.Context()
@@ -23,7 +22,6 @@ func StorageMassifCommitterFirstMassifTest(tc TestContext) {
 	MassifHeight := uint8(3)
 	c, err := tc.NewMassifCommitter(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
 	require.NoError(t, err, "unexpected error creating massif committer")
-
 	var mc *massifs.MassifContext
 	clock := time.Now()
 	if mc, err = c.GetAppendContext(ctx); err != nil {
@@ -34,8 +32,8 @@ func StorageMassifCommitterFirstMassifTest(tc TestContext) {
 	assert.Equal(t, mc.Start.MassifIndex, uint32(0))
 }
 
-// StorageMassifCommitterAddFirstTwoLeavesTest the addition of leaves to a new log whose height is sufficient to contain at least two leaves
-func StorageMassifCommitterAddFirstTwoLeavesTest(tc TestContext) {
+// StorageMassifCommitterAddFirstTwoLeavesTest tests adding first two leaves with generic storage
+func StorageMassifCommitterAddFirstTwoLeavesTest(tc mmrtesting.ProviderTestContext) {
 	var err error
 	cfg := tc.GetTestCfg()
 	t := tc.GetT()
@@ -64,8 +62,8 @@ func StorageMassifCommitterAddFirstTwoLeavesTest(tc TestContext) {
 	}
 }
 
-// StorageMassifCommitterExtendAndCommitFirstTest the addition, and committal of 3 leaves to a new log whose height is sufficient to contain more than 3 leaves.
-func StorageMassifCommitterExtendAndCommitFirstTest(tc TestContext) {
+// StorageMassifCommitterExtendAndCommitFirstTest tests massif extension with generic storage
+func StorageMassifCommitterExtendAndCommitFirstTest(tc mmrtesting.ProviderTestContext) {
 	var err error
 	cfg := tc.GetTestCfg()
 	t := tc.GetT()
@@ -91,10 +89,8 @@ func StorageMassifCommitterExtendAndCommitFirstTest(tc TestContext) {
 	assert.Equal(t, mc.Creating, false)
 }
 
-// StorageMassifCommitterCompleteFirstTest test that aquiring a context after
-// perfectly filling a massif results in a new empty context ready for adding
-// further entries
-func StorageMassifCommitterCompleteFirstTest(tc TestContext) {
+// StorageMassifCommitterCompleteFirstTest tests massif completion with generic storage
+func StorageMassifCommitterCompleteFirstTest(tc mmrtesting.ProviderTestContext) {
 	var err error
 	cfg := tc.GetTestCfg()
 	t := tc.GetT()
@@ -135,7 +131,8 @@ func StorageMassifCommitterCompleteFirstTest(tc TestContext) {
 	assert.Equal(t, mc.Creating, true)
 }
 
-func StorageMassifCommitterOverfillSafeTest(tc TestContext) {
+// StorageMassifCommitterOverfillSafeTest tests overfill protection with generic storage
+func StorageMassifCommitterOverfillSafeTest(tc mmrtesting.ProviderTestContext) {
 	var err error
 	cfg := tc.GetTestCfg()
 	t := tc.GetT()
@@ -157,18 +154,15 @@ func StorageMassifCommitterOverfillSafeTest(tc TestContext) {
 	err = c.CommitContext(t.Context(), mc)
 	assert.Nil(t, err)
 
-	// Implementations should be create safe, that is after committing a massif that is in "Creating"
-	// mode, subsequent use of the context to add more entries is possible, without having to call GetAppendContext
-	// if mc, err = c.GetAppendContext(ctx); err != nil {
-	// 	t.Fatalf("unexpected err: %v", err)
-	// }
+	// Test context reuse - this should work just like the original implementation
+	// The unified implementation should properly update metadata state after each commit
 
-	// add 3 entries, leaving space for two more logs
+	// add 3 entries, leaving space for two more logs (reusing same context)
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 3)
 	err = c.CommitContext(t.Context(), mc)
 	assert.Nil(t, err)
 
-	// add 5 entries, over filling the first massif
+	// add 5 entries, over filling the first massif (still reusing same context)
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 5)
 	err = c.CommitContext(t.Context(), mc)
 	if err == nil {
@@ -176,8 +170,8 @@ func StorageMassifCommitterOverfillSafeTest(tc TestContext) {
 	}
 }
 
-func StorageMassifCommitterThreeMassifsTest(tc TestContext) {
-
+// StorageMassifCommitterThreeMassifsTest tests three massifs scenario with generic storage
+func StorageMassifCommitterThreeMassifsTest(tc mmrtesting.ProviderTestContext) {
 	var err error
 	cfg := tc.GetTestCfg()
 	t := tc.GetT()
@@ -215,9 +209,6 @@ func StorageMassifCommitterThreeMassifsTest(tc TestContext) {
 	if mc, err = c.GetAppendContext(ctx); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	// blobPath1 := fmt.Sprintf("v1/mmrs/tenant/%s/0/massifs/%016d.log", logIDStr, 1)
-	// ac := c.Az.Massifs[mc.Start.MassifIndex]
-	// assert.Equal(tc.T, ac.BlobPath, blobPath1)
 	assert.Equal(t, mc.Creating, true)
 	assert.Equal(t, len(mc.Data)-int(mc.LogStart()), 0)
 	// Check our start leaf value is the last hash from the previous mmr
@@ -239,9 +230,6 @@ func StorageMassifCommitterThreeMassifsTest(tc TestContext) {
 	if mc, err = c.GetAppendContext(ctx); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	// blobPath2 := fmt.Sprintf("v1/mmrs/tenant/%s/0/massifs/%016d.log", logIDStr, 2)
-	// ac = c.Az.Massifs[mc.Start.MassifIndex]
-	// assert.Equal(tc.T, ac.BlobPath, blobPath2)
 	assert.Equal(t, mc.Creating, true)
 	assert.Equal(t, len(mc.Data)-int(mc.LogStart()), 0)
 	assert.Equal(t, mc.Start.FirstIndex, uint64(15))
@@ -260,9 +248,6 @@ func StorageMassifCommitterThreeMassifsTest(tc TestContext) {
 	}
 	assert.Equal(t, mc.Start.FirstIndex, uint64(22))
 	assert.Equal(t, mc.Creating, true)
-	// blobPath3 := fmt.Sprintf("v1/mmrs/tenant/%s/0/massifs/%016d.log", logIDStr, 3)
-	// ac = c.Az.Massifs[mc.Start.MassifIndex]
-	// assert.Equal(tc.T, ac.BlobPath, blobPath3)
 
 	// *part* fill it
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 2)
@@ -273,6 +258,5 @@ func StorageMassifCommitterThreeMassifsTest(tc TestContext) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, false)
-	// assert.Equal(t, c.Az.Massifs[mc.Start.MassifIndex].BlobPath, blobPath3)
 	assert.Equal(t, mc.Start.FirstIndex, uint64(22))
 }

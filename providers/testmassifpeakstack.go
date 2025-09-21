@@ -6,11 +6,12 @@ import (
 
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/mmr"
+	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func PeakStackStartNextMassifTest(tc TestContext) {
+func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
 
 	var err error
 	t := tc.GetT()
@@ -391,7 +392,7 @@ func PeakStackStartNextMassifTest(tc TestContext) {
 }
 
 // PeakStackHeight4Massif2to3Size63Test reproduces a peak stack issue
-func PeakStackHeight4Massif2to3Size63Test(tc TestContext) {
+func PeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestContext) {
 	t := tc.GetT()
 	ctx := t.Context()
 	cfg := tc.GetTestCfg()
@@ -410,13 +411,13 @@ func PeakStackHeight4Massif2to3Size63Test(tc TestContext) {
 	mmrSizeB := uint64(63)
 	nLeaves := mmr.LeafCount(mmrSizeB)
 
-	err = CommitLeaves(ctx, tc, committer, nLeaves)
+	err = tc.CommitLeaves(ctx, committer, nLeaves)
 	require.Nil(t, err)
 
 	// this fails
-	massifReader, err := tc.NewMassifContextReader(storageOpts)
+	massifGetter, err := tc.NewMassifGetter(storageOpts)
 	require.NoError(t, err)
-	mc3, err := massifReader.GetMassifContext(ctx, 3)
+	mc3, err := massifGetter.GetMassifContext(ctx, 3)
 	require.NoError(t, err)
 	err = mc3.CreatePeakStackMap()
 	require.NoError(t, err)
@@ -432,7 +433,7 @@ func PeakStackHeight4Massif2to3Size63Test(tc TestContext) {
 	hsz := mmr.HeightSize(uint64(storageOpts.MassifHeight))
 	hlc := (hsz + 1) / 2
 	mi30 := uint32(iLeaf30 / hlc)
-	mcPeakNode30, err := massifReader.GetMassifContext(ctx, mi30)
+	mcPeakNode30, err := massifGetter.GetMassifContext(ctx, mi30)
 	require.NoError(t, err)
 	peakNode30, err := mcPeakNode30.Get(iPeakNode30)
 	require.NoError(t, err)
@@ -440,7 +441,7 @@ func PeakStackHeight4Massif2to3Size63Test(tc TestContext) {
 	require.NoError(t, err)
 
 	mi45 := uint32(iLeaf45 / hlc)
-	mcPeakNode45, err := massifReader.GetMassifContext(ctx, mi45)
+	mcPeakNode45, err := massifGetter.GetMassifContext(ctx, mi45)
 	require.NoError(t, err)
 	peakNode45, err := mcPeakNode45.Get(iPeakNode45)
 	require.NoError(t, err)

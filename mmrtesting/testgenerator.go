@@ -20,6 +20,13 @@ const (
 	jitterMultipler = 2
 )
 
+// LeafContent is a sample structure for leaf content used in testsc:w
+type LeafContent struct {
+	LogID   storage.LogID `cbor:"log_id" json:"log_id"`
+	ID      []byte        `cbor:"id" json:"id"`
+	Message string        `cbor:"message" json:"message"`
+}
+
 func HashWriteUint64(hasher hash.Hash, value uint64) {
 	b := [8]byte{}
 	binary.BigEndian.PutUint64(b[:], value)
@@ -67,25 +74,21 @@ func MMRTestingGenerateNumberedLeaf(base, i uint64) AddLeafArgs {
 // This means that we generate valid values for things like uuid based
 // identities and simulated time stamps, but the log telemetry from successive runs will
 // be usefuly stable.
-func NewTestGenerator(t *testing.T, cfg *TestOptions, opts ...massifs.Option) TestGenerator {
+func NewTestGenerator(t *testing.T, cfg *TestOptions) TestGenerator {
 
 	g := TestGenerator{}
-	g.Init(t, cfg, opts...)
+	g.Init(t, cfg)
 	return g
 }
 
 // Using the
-func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions, opts ...massifs.Option) {
-	if cfg == nil {
-		cfg = &TestOptions{}
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions) {
+
 	g.Cfg = cfg
 	g.T = t
 	g.StartTime = time.UnixMilli(cfg.StartTimeMS)
 	g.LastTime = time.UnixMilli(cfg.StartTimeMS)
+
 	var err error
 	g.IDState, err = snowflakeid.NewIDState(snowflakeid.Config{
 		CommitmentEpoch: 1,
@@ -151,6 +154,55 @@ func (g *TestGenerator) PadWithNumberedLeaves(data []byte, first, n int) []byte 
 		binary.BigEndian.PutUint32(values[i*massifs.ValueBytes+massifs.ValueBytes-4:i*massifs.ValueBytes+massifs.ValueBytes], uint32(first+i))
 	}
 	return append(data, values...)
+}
+
+func (c *TestGenerator) EncodeLeafForAddition(a any) AddLeafArgs {
+
+	leaf, ok := a.(*LeafContent)
+	require.True(c.T, ok)
+
+	// DOMAIN SEPARATOR
+	leafHasher := sha256.New()
+	_, err := leafHasher.Write([]byte{byte(0)}) // domain separation, default is LeafTypePlain (0)
+	require.NoError(c.T, err)
+
+	// ID TIMSTAMP COMMITMENT
+	id, err := c.NextID()
+	require.NoError(c.T, err)
+	idcommitted := make([]byte, 8)
+	binary.BigEndian.PutUint64(idcommitted, id)
+
+	// create a separate hasher to get the raw content hash
+	contentHasher := sha256.New()
+
+	content, err := c.Cfg.StorageOptions().CBORCodec.MarshalCBOR(leaf) // ensure any defaults are set
+	require.NoError(c.T, err)
+
+	_, err = contentHasher.Write(content)
+	require.NoError(c.T, err)
+	contentHash := contentHasher.Sum(nil)
+
+	// append the content to the leaf hasher
+	_, err = leafHasher.Write(content)
+	require.NoError(c.T, err)
+
+	return AddLeafArgs{
+		ID:    id,
+		AppID: contentHash, // use the content hash as the app ID
+		Value: leafHasher.Sum(nil),
+		LogID: c.Cfg.LogID,
+	}
+}
+
+func (c *TestGenerator) GenerateLeafContent(logID storage.LogID) any {
+	id, err := c.NewRandomUUID()
+	require.NoError(c.T, err)
+	content := &LeafContent{
+		LogID:   logID,
+		ID:      id[:],
+		Message: c.MultiWordString(8),
+	}
+	return content
 }
 
 func (g *TestGenerator) SinceLastJitter(noUpdate ...bool) time.Time {
