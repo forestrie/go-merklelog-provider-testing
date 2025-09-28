@@ -1,3 +1,5 @@
+//go:build disable
+
 package mmrtesting
 
 import (
@@ -5,12 +7,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"hash"
-	"math/rand"
 	"strings"
 	"testing"
 	"time"
 
-	commoncbor "github.com/datatrails/go-datatrails-common/cbor"
+	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/snowflakeid"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/google/uuid"
@@ -38,14 +39,36 @@ func HashWriteUint64(hasher hash.Hash, value uint64) {
 // run the values can be the same. Intended for white box tests that benefit from a
 // large volume of synthetic data.
 type TestGenerator struct {
-	T          *testing.T
-	EventRate  int
-	CBORCodec  *commoncbor.CBORCodec
-	Rand       *rand.Rand
-	WordCannon []string // used for generating random words, defaults to bip32WordList
-	StartTime  time.Time
-	LastTime   time.Time
-	IDState    *snowflakeid.IDState
+	Cfg       *TestOptions
+	T         *testing.T
+	StartTime time.Time
+	LastTime  time.Time
+	IDState   *snowflakeid.IDState
+}
+
+// AddLeafArgs is the return value of all LeafGenerator implementations. It
+// carries just enough to successfully call AddLeafEntry on a MassifContext The
+// leaf generator is free to decide on appropriate values
+type AddLeafArgs struct {
+	ID    uint64
+	AppID []byte
+	Value []byte
+	LogID []byte
+}
+
+type LeafGenerator func(base, i uint64) AddLeafArgs
+
+func MMRTestingGenerateNumberedLeaf(base, i uint64) AddLeafArgs {
+	h := sha256.New()
+	HashWriteUint64(h, base+i)
+
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, base+i)
+	return AddLeafArgs{
+		ID:    0,
+		AppID: b,
+		Value: h.Sum(nil),
+	}
 }
 
 // NewTestGenerator creates a deterministic, but random looking, test data generator.
@@ -63,10 +86,8 @@ func NewTestGenerator(t *testing.T, cfg *TestOptions) TestGenerator {
 // Using the
 func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions) {
 
+	g.Cfg = cfg
 	g.T = t
-	g.WordCannon = cfg.WordList
-	g.CBORCodec = cfg.CBORCodec
-	g.Rand = cfg.Rand
 	g.StartTime = time.UnixMilli(cfg.StartTimeMS)
 	g.LastTime = time.UnixMilli(cfg.StartTimeMS)
 
@@ -98,66 +119,97 @@ func (g *TestGenerator) NextID() (uint64, error) {
 	return id, nil
 }
 
-func NewGenericLeafGenerator(g *TestGenerator, logID storage.LogID) LeafGenerator {
-	leafGenerator := LeafGenerator{
-		LogID: logID,
-		Generator: func(logID storage.LogID, base, i uint64) any {
-			return g.GenerateLeafContent(logID, base, i)
-		},
-		Encoder: func(a any) AddLeafArgs {
-			return g.EncodeLeafForAddition(a)
-		},
-	}
-	return leafGenerator
+func (g *TestGenerator) GenerateNumberedLeafBatch(logID storage.LogID, base, count uint64) []AddLeafArgs {
+	h := sha256.New()
+	return g.GenerateLeafBatch(base, count, func(base, i uint64) AddLeafArgs {
+		h.Reset()
+		HashWriteUint64(h, base+i)
+		args := g.Cfg.LeafGenerator(base, i)
+		return AddLeafArgs{
+			ID:    args.ID,
+			AppID: args.AppID,
+			Value: h.Sum(nil),
+			LogID: logID,
+		}
+	})
 }
 
-func (g *TestGenerator) EncodeLeafForAddition(a any) AddLeafArgs {
+func (g *TestGenerator) GenerateLeafBatch(base, count uint64, gf LeafGenerator) []AddLeafArgs {
+	indexedLeaves := make([]AddLeafArgs, 0, count)
+	for i := range count {
+		args := gf(base, i)
+		indexedLeaves = append(indexedLeaves, args)
+	}
+	return indexedLeaves
+}
+
+func (g *TestGenerator) PadWithLeafEntries(data []byte, n int) []byte {
+	return g.PadWithNumberedLeaves(data, 0, n)
+}
+
+func (g *TestGenerator) PadWithNumberedLeaves(data []byte, first, n int) []byte {
+	if n == 0 {
+		return data
+	}
+	values := make([]byte, massifs.ValueBytes*n)
+	for i := range n {
+		binary.BigEndian.PutUint32(values[i*massifs.ValueBytes+massifs.ValueBytes-4:i*massifs.ValueBytes+massifs.ValueBytes], uint32(first+i))
+	}
+	return append(data, values...)
+}
+
+func (c *TestGenerator) EncodeLeafForAddition(a any) AddLeafArgs {
 
 	leaf, ok := a.(*LeafContent)
-	require.True(g.T, ok)
+	require.True(c.T, ok)
 
 	// DOMAIN SEPARATOR
 	leafHasher := sha256.New()
 	_, err := leafHasher.Write([]byte{byte(0)}) // domain separation, default is LeafTypePlain (0)
-	require.NoError(g.T, err)
+	require.NoError(c.T, err)
 
 	// ID TIMSTAMP COMMITMENT
-	id, err := g.NextID()
-	require.NoError(g.T, err)
+	id, err := c.NextID()
+	require.NoError(c.T, err)
 	idcommitted := make([]byte, 8)
 	binary.BigEndian.PutUint64(idcommitted, id)
 
-	content, err := g.CBORCodec.MarshalCBOR(leaf) // ensure any defaults are set
-	require.NoError(g.T, err)
+	// create a separate hasher to get the raw content hash
+	contentHasher := sha256.New()
+
+	content, err := c.Cfg.StorageOptions().CBORCodec.MarshalCBOR(leaf) // ensure any defaults are set
+	require.NoError(c.T, err)
+
+	_, err = contentHasher.Write(content)
+	require.NoError(c.T, err)
+	contentHash := contentHasher.Sum(nil)
 
 	// append the content to the leaf hasher
 	_, err = leafHasher.Write(content)
-	require.NoError(g.T, err)
+	require.NoError(c.T, err)
 
 	return AddLeafArgs{
 		ID:    id,
-		AppID: leaf.ID,
+		AppID: contentHash, // use the content hash as the app ID
 		Value: leafHasher.Sum(nil),
-		LogID: leaf.LogID,
+		LogID: c.Cfg.LogID,
 	}
 }
 
-func (g *TestGenerator) GenerateLeafContent(
-	logID storage.LogID, base, i uint64) any {
-
-	id := make([]byte, 8)
-	binary.BigEndian.PutUint64(id, base+i)
+func (c *TestGenerator) GenerateLeafContent(logID storage.LogID) any {
+	id, err := c.NewRandomUUID()
+	require.NoError(c.T, err)
 	content := &LeafContent{
 		LogID:   logID,
 		ID:      id[:],
-		Message: g.MultiWordString(8),
+		Message: c.MultiWordString(8),
 	}
 	return content
 }
 
 func (g *TestGenerator) SinceLastJitter(noUpdate ...bool) time.Time {
 	// the * 2 puts the normal mid point on the ideal rate.
-	ts := g.LastTime.Add(time.Millisecond * time.Duration(g.Float32()*1000.0/float32(g.EventRate*jitterMultipler)))
+	ts := g.LastTime.Add(time.Millisecond * time.Duration(g.Float32()*1000.0/float32(g.Cfg.EventRate*jitterMultipler)))
 	if len(noUpdate) == 0 || !noUpdate[0] {
 		g.LastTime = ts
 	}
@@ -165,7 +217,7 @@ func (g *TestGenerator) SinceLastJitter(noUpdate ...bool) time.Time {
 }
 
 func (g *TestGenerator) SinceJitter(lastTime time.Time) time.Time {
-	return lastTime.Add(time.Millisecond * time.Duration(g.Float32()*1000.0/float32(g.EventRate)))
+	return lastTime.Add(time.Millisecond * time.Duration(g.Float32()*1000.0/float32(g.Cfg.EventRate)))
 }
 
 func (g *TestGenerator) NewLogID() storage.LogID {
@@ -187,23 +239,23 @@ func (g *TestGenerator) NewRandomUUIDString(t *testing.T) string {
 }
 
 func (g *TestGenerator) NewRandomUUID() (uuid.UUID, error) {
-	return uuid.NewRandomFromReader(g.Rand)
+	return uuid.NewRandomFromReader(g.Cfg.Rand)
 }
 
 func (g *TestGenerator) Intn(n int) int {
-	return g.Rand.Intn(n)
+	return g.Cfg.Rand.Intn(n)
 }
 
 func (g *TestGenerator) Float32() float32 {
-	return g.Rand.Float32()
+	return g.Cfg.Rand.Float32()
 }
 
-// WordCannon returns a list of random words selected from the table
+// WordList returns a list of random words selected from the table
 func (g *TestGenerator) WordList(count int) []string {
 	words := make([]string, 0, count)
-	maxWords := len(g.WordCannon)
+	maxWords := len(g.Cfg.WordList)
 	for range count {
-		words = append(words, g.WordCannon[g.Intn(maxWords)])
+		words = append(words, g.Cfg.WordList[g.Intn(maxWords)])
 	}
 	return words
 }

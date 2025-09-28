@@ -1,8 +1,10 @@
 package providers
 
 import (
+	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 )
 
-type TestContextFactory mmrtesting.TestContextFactory
-type TypeContext mmrtesting.ProviderTestContext
+type BuilderFactory func(opts massifs.StorageOptions) mmrtesting.LogBuilder
+type ReplicationSourceFactory func(opts massifs.StorageOptions) massifs.ReplicationSource
+type VerifyingExtenderFactory func(opts massifs.StorageOptions) massifs.VerifyingExtender

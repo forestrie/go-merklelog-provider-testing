@@ -10,7 +10,6 @@ import (
 
 	commoncbor "github.com/datatrails/go-datatrails-common/cbor"
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/google/uuid"
 	"github.com/veraison/go-cose"
 )
@@ -18,39 +17,21 @@ import (
 // TestOptions holds options generic for all storage implementations.
 type TestOptions struct {
 	massifs.SignerOptions
+	massifs.StorageOptions
 	// We seed the RNG of the provided StartTimeMS. It is normal to force it to
 	// some fixed value so that the generated data is the same from run to run.
 	StartTimeMS     int64
 	EventRate       int
 	TestLabelPrefix string
-	LogID           storage.LogID // can be nil, defaults to TestLabelPrefix
 	Rand            *rand.Rand
 	WordList        []string // used for generating random words, defaults to bip32WordList
-	LeafGenerator   LeafGenerator
-	MassifHeight    uint8 // defaults to 14
-	CommitmentEpoch uint8 // defaults to 1, which means latest, and is goog until 2038
 
 	CheckpointIssuer string
 	DisableSigning   bool // if true, the signer will not sign anything
-	FSDir            string
 	LogLevel         string
-	PathProvider     storage.PathProvider
-	PrefixProvider   storage.PrefixProvider
-
-	CBORCodec    *commoncbor.CBORCodec
-	COSEVerifier cose.Verifier
+	RootDir          string
 
 	errs []error // set not nil if there was an error processing options
-}
-
-func (o *TestOptions) StorageOptions() massifs.StorageOptions {
-	return massifs.StorageOptions{
-		LogID:           o.LogID,
-		CommitmentEpoch: o.CommitmentEpoch,
-		MassifHeight:    o.MassifHeight,
-		CBORCodec:       o.CBORCodec,
-		COSEVerifier:    o.COSEVerifier,
-	}
 }
 
 // WithCommitmentEpoch sets the CommitmentEpoch option for TestOptions.
@@ -65,16 +46,6 @@ func WithMassifHeight(height uint8) massifs.Option {
 	}
 }
 
-func WithFSDir(dir string) massifs.Option {
-	return func(o any) {
-		options, ok := o.(*TestOptions)
-		if !ok {
-			return
-		}
-		options.FSDir = dir
-	}
-}
-
 func WithNoSigning() massifs.Option {
 	return func(o any) {
 		options, ok := o.(*TestOptions)
@@ -84,17 +55,6 @@ func WithNoSigning() massifs.Option {
 		options.DisableSigning = true
 	}
 }
-
-/*
-func WithLeafHasher(hasher LeafHasher) massifs.Option {
-	return func(o any) {
-		options, ok := o.(*TestOptions)
-		if !ok {
-			return
-		}
-		options.LeafHasher = hasher
-	}
-}*/
 
 func WithCheckpointIssuer(issuer string) massifs.Option {
 	return func(o any) {
@@ -117,16 +77,6 @@ func WithStartTimeMS(startTimeMS int64) massifs.Option {
 			return
 		}
 		options.StartTimeMS = startTimeMS
-	}
-}
-
-func WithLeafGenerator(leafGenerator LeafGenerator) massifs.Option {
-	return func(o any) {
-		options, ok := o.(*TestOptions)
-		if !ok {
-			return
-		}
-		options.LeafGenerator = leafGenerator
 	}
 }
 
@@ -164,6 +114,9 @@ func (o *TestOptions) EnsureDefaults(t *testing.T) {
 	if len(o.errs) > 0 {
 		t.Fatalf("failed to initialize test options: %v", o.errs[0])
 	}
+	if o.RootDir == "" {
+		o.RootDir = t.TempDir()
+	}
 }
 
 // WithDefaults can be used to populate test options with defaults during option processing.
@@ -182,12 +135,6 @@ func WithDefaults() massifs.Option {
 		// default leaf type plain is the zero value.
 		if options.CheckpointIssuer == "" {
 			options.CheckpointIssuer = DefaultCheckpointIssuer
-		}
-		if options.PrefixProvider == nil {
-			options.PrefixProvider = &DatatrailsPathPrefixProvider{}
-		}
-		if options.PathProvider == nil {
-			options.PathProvider = &storage.StoragePaths{PrefixProvider: options.PrefixProvider, CurrentLogID: nil}
 		}
 
 		if options.MassifHeight == 0 {
@@ -222,9 +169,6 @@ func WithDefaults() massifs.Option {
 				panic("failed to generate random LogID: " + err.Error())
 			}
 			options.LogID = id[:]
-		}
-		if options.LeafGenerator == nil {
-			options.LeafGenerator = MMRTestingGenerateNumberedLeaf
 		}
 
 		if !options.DisableSigning && options.Signer == nil {

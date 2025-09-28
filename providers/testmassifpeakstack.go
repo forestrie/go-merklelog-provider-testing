@@ -11,12 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
+// StoragePeakStackContext is the required context specific to the StorageVerifyingReplicator tests
+type StoragePeakStackContext struct {
+
+	// BuilderFactory is used to create the log, and peak stack, for the tests.
+	BuilderFactory BuilderFactory
+}
+
+func StoragePeakStackStartNextMassifTest(
+	tc mmrtesting.ProviderTestContext) {
 
 	var err error
 	t := tc.GetT()
 
-	massifHeight := uint8(2) // each masif has 2 leaves and 3 nodes + spur
+	massifHeight := uint8(2) // each massif has 2 leaves and 3 nodes + spur
 	mc := massifs.MassifContext{}
 	mc.Start = massifs.NewMassifStart(0, 0, massifHeight, 0, 0)
 	mc.Data, err = mc.Start.MarshalBinary()
@@ -82,7 +90,7 @@ func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
 	// exactly that order, and we will need them all exactly, and only, when we
 	// add mmr index 11 (leaf 7), or at some arbitrary point later if we need to
 	// produce a receipt for leaves 7 *or* 6. Whether we are adding mmr index 11
-	// or whether we are generatint a receipt for mmr indices 6 or 7, we always
+	// or whether we are generating a receipt for mmr indices 6 or 7, we always
 	// need ancestor mmr's 9 and 6 and in that order. The massif local nodes (10
 	// or 11 in this example) are available via normal Get access directly from
 	// the blob data array.
@@ -103,7 +111,7 @@ func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
 	// + ---------------+
 	// | First Entry    | The first log entry, which occupies MMR INDEX FirstIndex
 	//
-	// Layed out horizontally, the first massif will look like this
+	// Laid out horizontally, the first massif will look like this
 	//
 	// +--------++---+---+---+
 	// | [0, 0] || 0 | 1 | 2 |
@@ -171,7 +179,7 @@ func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
 	// | [1, 3] | 2 || 3 | 4 | 5 | 6 |
 	// +--------+---++---+-------+---+
 	//
-	// When we add(4), we will add 5 geting local (3) then get(2) from the stack to create 6
+	// When we add(4), we will add 5 getting local (3) then get(2) from the stack to create 6
 	// The stack position we need is always top - (adding height - massif height)
 
 	mc0 := mc
@@ -325,8 +333,8 @@ func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
 	// --- massif 4
 	//
 	// Note that this case is particularly interesting because it completes a
-	// full cycle from one perfect power to the next. massif 0 and massf 3 both
-	// hit 'perfect' mmr trees. And the massif imediately after will see the
+	// full cycle from one perfect power to the next. massif 0 and massif 3 both
+	// hit 'perfect' mmr trees. And the massif immediately after will see the
 	// stack from the previous completely reset. It is a fact of the MMR
 	// construction that the look back is never further than the most recent
 	// 'perfect' tree completing massif. This creates a a very predictable and
@@ -391,18 +399,16 @@ func PeakStackStartNextMassifTest(tc mmrtesting.ProviderTestContext) {
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, int(mc.Start.FirstIndex), 1<<massifHeight-1)
 }
 
-// PeakStackHeight4Massif2to3Size63Test reproduces a peak stack issue
-func PeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestContext) {
+// StoragePeakStackHeight4Massif2to3Size63Test reproduces a peak stack issue
+func StoragePeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestContext, sc *StoragePeakStackContext) {
 	t := tc.GetT()
 	ctx := t.Context()
-	cfg := tc.GetTestCfg()
-	logID := cfg.LogID
+	logID := tc.GetG().NewLogID()
 
 	MassifHeight := uint8(4)
 	storageOpts := massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight}
 
-	committer, err := tc.NewMassifCommitter(storageOpts)
-	require.NoError(t, err)
+	builder := sc.BuilderFactory(storageOpts)
 
 	// caller should do this, they have the native interface
 	// pth := tc.StoragePrefix(logID)
@@ -411,12 +417,11 @@ func PeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestContext) {
 	mmrSizeB := uint64(63)
 	nLeaves := mmr.LeafCount(mmrSizeB)
 
-	err = tc.CommitLeaves(ctx, committer, nLeaves)
+	_, err := tc.CommitLeaves(ctx, builder, 0, nLeaves)
 	require.Nil(t, err)
 
 	// this fails
-	massifGetter, err := tc.NewMassifGetter(storageOpts)
-	require.NoError(t, err)
+	massifGetter := builder.ObjectStore
 	mc3, err := massifGetter.GetMassifContext(ctx, 3)
 	require.NoError(t, err)
 	err = mc3.CreatePeakStackMap()
@@ -462,7 +467,7 @@ func PeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestContext) {
 	// https://github.com/datatrails/epic-8120-scalable-proof-mechanisms/blob/main/mmr/forestrie-mmrblobs.md
 	// Which is the smallest (and oldest) peak is *first*
 
-	// first check directly in the storate if they are there at all in any order
+	// first check directly in the storage if they are there at all in any order
 
 	for ia = range len(ancestors) / massifs.ValueBytes {
 		a = ancestors[ia*massifs.ValueBytes : ia*massifs.ValueBytes+massifs.ValueBytes]

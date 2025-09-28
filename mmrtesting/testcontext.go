@@ -23,44 +23,85 @@ const (
 	DefaultCheckpointIssuer = "https://github.com/robinbryce/testing/checkpoint-issuer/default"
 )
 
-type TestContextFactory interface {
-	NewMassifGetter(opts massifs.StorageOptions) (massifs.MassifContextGetter, error)
-	NewMassifCommitter(opts massifs.StorageOptions) (*massifs.MassifCommitter[massifs.HeadReplacer], error)
-	NewMassifCommitterStore(opts massifs.StorageOptions) (*massifs.MassifCommitter[massifs.CommitterStore], error)
-	NewCommitterStore(opts massifs.StorageOptions) (massifs.CommitterStore, error)
-
-	GenerateLeafContent(logID storage.LogID) any
-	EncodeLeafForAddition(leaf any) AddLeafArgs
-}
-
 // ProviderTestContext is satisfied by storage specific provider implementations
 // Doing so allows them to be tested using the common provider tests.
 type ProviderTestContext interface {
-	TestContextFactory
-
 	GetTestCfg() TestOptions
 	GetT() *testing.T
+	GetG() *TestGenerator
 
 	// Generation methods
 	PadWithNumberedLeaves(data []byte, first, n int) []byte
 
 	CommitLeaves(
 		ctx context.Context,
-		committer *massifs.MassifCommitter[massifs.HeadReplacer],
+		builder LogBuilder,
+		base uint64,
 		count uint64,
-	) error
+	) (GeneratedLeaves, error)
 
-	// EncodeLeafContent(leaf any) []byte
-	// GenerateNumberedLeafBatch(logID storage.LogID, startIndex uint64, count uint64) []mmrtesting.AddLeafArgs
+	CreateLog(
+		ctx context.Context,
+		builder LogBuilder,
+		massifHeight uint8, massifCount uint32,
+	) (GeneratedLeaves, error)
+
+	AddLeaves(
+		ctx context.Context,
+		builder LogBuilder,
+		base uint64,
+		count uint64,
+	) (GeneratedLeaves, error)
 }
 
-// MassifSealing provides the minimal storage interface required to implement log sealing for tests
-type MassifSealing interface {
+type MassifPutter interface {
+	Put(ctx context.Context, massifIndex uint32, ty storage.ObjectType, data []byte, failIfExists bool) error
+}
+
+type HeadSealer interface {
+	Put(ctx context.Context, massifIndex uint32, ty storage.ObjectType, data []byte, failIfExists bool) error
+	HeadIndex(ctx context.Context, otype storage.ObjectType) (uint32, error)
+	GetCheckpoint(ctx context.Context, massifIndex uint32) (*massifs.Checkpoint, error)
+	GetMassifContext(ctx context.Context, massifIndex uint32) (*massifs.MassifContext, error)
+}
+
+// MassifSealer provides the minimal storage interface required to implement log sealing for tests
+type MassifSealer interface {
 	GetStorageOptions() massifs.StorageOptions
 	HeadIndex(ctx context.Context, otype storage.ObjectType) (uint32, error)
 	GetMassifContext(ctx context.Context, massifIndex uint32) (*massifs.MassifContext, error)
-	//GetStart(ctx context.Context, massifIndex uint32) (*massifs.MassifStart, error)
 	GetCheckpoint(ctx context.Context, massifIndex uint32) (*massifs.Checkpoint, error)
+	Put(ctx context.Context, massifIndex uint32, ty storage.ObjectType, data []byte, failIfExists bool) error
+}
+
+type MassifCommitter interface {
+	GetAppendContext(ctx context.Context) (*massifs.MassifContext, error)
+	CommitContext(ctx context.Context, mc *massifs.MassifContext) error
+}
+
+type MassifGetter interface {
+	GetMassifContext(ctx context.Context, massifIndex uint32) (*massifs.MassifContext, error)
+}
+
+// MassifStore provides the storage interface required to implement log creation and appending for tests
+type MassifStore interface {
+	// GetStorageOptions() massifs.StorageOptions
+	SelectLog(ctx context.Context, logId storage.LogID) error
+	HeadIndex(ctx context.Context, otype storage.ObjectType) (uint32, error)
+	GetAppendContext(ctx context.Context) (*massifs.MassifContext, error)
+	CommitContext(ctx context.Context, mc *massifs.MassifContext) error
+	GetMassifContext(ctx context.Context, massifIndex uint32) (*massifs.MassifContext, error)
+	GetCheckpoint(ctx context.Context, massifIndex uint32) (*massifs.Checkpoint, error)
+	Put(ctx context.Context, massifIndex uint32, ty storage.ObjectType, data []byte, failIfExists bool) error
+}
+
+type ObjectStore interface {
+	// GetStorageOptions() massifs.StorageOptions
+	SelectLog(ctx context.Context, logId storage.LogID) error
+	HeadIndex(ctx context.Context, otype storage.ObjectType) (uint32, error)
+	GetMassifContext(ctx context.Context, massifIndex uint32) (*massifs.MassifContext, error)
+	GetCheckpoint(ctx context.Context, massifIndex uint32) (*massifs.Checkpoint, error)
+	GetStart(ctx context.Context, massifIndex uint32) (*massifs.MassifStart, error)
 	Put(ctx context.Context, massifIndex uint32, ty storage.ObjectType, data []byte, failIfExists bool) error
 }
 
@@ -70,42 +111,60 @@ type MassifStorageEmulator interface {
 	DeleteByStoragePrefix(storagePrefixPath string)
 }
 
-type TestContext[E MassifStorageEmulator, F TestContextFactory] struct {
-	Cfg            *TestOptions
-	T              *testing.T
-	Emulator       E
-	Factory        F
-	PathProvider   storage.PathProvider
-	PrefixProvider storage.PrefixProvider
-	G              TestGenerator
+type LogDeleter func(logID storage.LogID)
+
+type LogBuilder struct {
+
+	// LeafGenerator creates leaf content and the associated AddLeafArgs for adding it to a massif log
+	LeafGenerator LeafGenerator
+	// MassifCommitter is the regular minimal interface for extending a massif log
+	MassifCommitter MassifCommitter
+
+	// If this is not nil and DisableSealing is false then the log will be sealed after leaves are added
+	MassifSealer MassifSealer
+
+	// Used for general inspection of the store, all providers have to be able to satisfy this
+	ObjectStore ObjectStore
+
+	DeleteLog LogDeleter
 }
 
-func NewTestContext[E MassifStorageEmulator, F TestContextFactory](
-	t *testing.T, emulator E, factory F, opts *TestOptions) *TestContext[E, F] {
+type TestContext[E MassifStorageEmulator] struct {
+	Cfg      *TestOptions
+	T        *testing.T
+	Emulator E
+	G        TestGenerator
+}
 
-	c := TestContext[E, F]{
+func NewTestContext[E MassifStorageEmulator](
+	t *testing.T, emulator E, opts *TestOptions) *TestContext[E] {
+
+	c := TestContext[E]{
 		T:        t,
 		Emulator: emulator,
-		Factory:  factory,
 	}
 	c.Init(t, opts)
 
 	return &c
 }
 
-func (c *TestContext[E, F]) DeleteLog(logID storage.LogID) {
+func (c *TestContext[E]) GetT() *testing.T {
+	return c.T
+}
+
+func (c *TestContext[E]) GetG() *TestGenerator {
+	return &c.G
+}
+
+func (c *TestContext[E]) DeleteLog(logID storage.LogID) {
 	if logID == nil {
 		return
 	}
-	prefix, err := c.PrefixProvider.Prefix(logID, storage.ObjectMassifData)
-	require.NoError(c.T, err)
-	c.Emulator.DeleteByStoragePrefix(prefix)
-	prefix, err = c.PrefixProvider.Prefix(logID, storage.ObjectCheckpoint)
-	require.NoError(c.T, err)
-	c.Emulator.DeleteByStoragePrefix(prefix)
+
+	c.Emulator.DeleteByStoragePrefix(datatrails.StoragePrefixPath(logID))
 }
 
-func (c *TestContext[E, F]) Init(t *testing.T, opts *TestOptions) {
+func (c *TestContext[E]) Init(t *testing.T, opts *TestOptions) {
 
 	opts.EnsureDefaults(t)
 
@@ -116,9 +175,6 @@ func (c *TestContext[E, F]) Init(t *testing.T, opts *TestOptions) {
 
 	c.G.Init(t, opts)
 	c.Cfg = opts
-	c.PrefixProvider = c.Cfg.PrefixProvider
-	c.PathProvider = c.Cfg.PathProvider
-	c.PathProvider.SelectLog(context.Background(), c.Cfg.LogID)
 
 	c.Emulator.DeleteByStoragePrefix(datatrails.StoragePrefixPath(c.Cfg.LogID))
 
@@ -127,155 +183,149 @@ func (c *TestContext[E, F]) Init(t *testing.T, opts *TestOptions) {
 	c.Cfg = opts
 }
 
-func (tc *TestContext[E, F]) CommitLeaves(
+func (tc *TestContext[E]) PadWithNumberedLeaves(data []byte, first, n int) []byte {
+	return PadWithNumberedLeaves(data, first, n)
+}
+
+func (tc *TestContext[E]) CommitLeaves(
 	ctx context.Context,
-	committer *massifs.MassifCommitter[massifs.HeadReplacer],
+	builder LogBuilder,
+	base uint64,
 	count uint64,
-) error {
+) (GeneratedLeaves, error) {
 	if count <= 0 {
-		return nil
+		return GeneratedLeaves{}, nil
 	}
 	t := tc.T
-	mc, err := committer.GetAppendContext(ctx)
+	mc, err := builder.MassifCommitter.GetAppendContext(ctx)
 	require.NoError(t, err)
-	batch := tc.G.GenerateNumberedLeafBatch(tc.Cfg.LogID, 0, count)
 
-	for _, args := range batch {
+	generated := GeneratedLeaves{}
+
+	for i := uint64(0); i < count; i++ {
+
+		addArgs, content := builder.LeafGenerator.Generate(base, i)
+
+		generated.Encoded = append(generated.Encoded, content)
+		generated.Args = append(generated.Args, addArgs)
+		generated.LeafIndices = append(generated.LeafIndices, base+i)
+
+		// TODO: decide if we need to support post-encoding decoration per datatrails
+		// mmrIndex is equal to the count of all nodes
+		generated.MMRIndices = append(generated.MMRIndices, mc.RangeCount())
 
 		_, err = mc.AddHashedLeaf(
-			sha256.New(), args.ID, args.LogID, args.AppID, nil, args.Value)
+			sha256.New(), addArgs.ID, nil, addArgs.LogID, addArgs.AppID, addArgs.Value)
 		if errors.Is(err, massifs.ErrMassifFull) {
-			err = committer.CommitContext(ctx, mc)
+			err = builder.MassifCommitter.CommitContext(ctx, mc)
 			if err != nil {
-				return err
+				return generated, err
 			}
-			mc, err = committer.GetAppendContext(ctx)
+			mc, err = builder.MassifCommitter.GetAppendContext(ctx)
 			if err != nil {
-				return err
+				return generated, err
 			}
 
 			// Remember to add the leaf we failed to add above
 			_, err = mc.AddHashedLeaf(
-				sha256.New(), args.ID, args.LogID, args.AppID, nil, args.Value)
+				sha256.New(), addArgs.ID, nil, addArgs.LogID, addArgs.AppID, addArgs.Value)
 			if err != nil {
-				return err
+				return generated, err
 			}
 
 			err = nil
 		}
 		if err != nil {
-			return err
+			return generated, err
 		}
 	}
-	err = committer.CommitContext(ctx, mc)
+	err = builder.MassifCommitter.CommitContext(ctx, mc)
 	if err != nil {
-		return err
+		return generated, err
 	}
 
-	return nil
+	return generated, nil
 }
 
-func (tc *TestContext[E, F]) CreateLog(
-	ctx context.Context, logID storage.LogID, massifHeight uint8, massifCount uint32, opts ...massifs.Option,
-) error {
+func (tc *TestContext[E]) CreateLog(
+	ctx context.Context,
+	builder LogBuilder,
+	// massifHeight must correspond to the height used to create the committer
+	// in order for massifCount to be accurately interpreted
+	massifHeight uint8, massifCount uint32,
+) (GeneratedLeaves, error) {
 
-	options := tc.Cfg.StorageOptions()
-
-	for _, opt := range opts {
-		opt(&options)
-	}
-
-	tc.DeleteLog(logID)
-
-	tc.PathProvider.SelectLog(ctx, logID)
-	committer, err := tc.Factory.NewMassifCommitterStore(options)
-	require.NoError(tc.T, err)
+	tc.DeleteLog(builder.LeafGenerator.LogID)
 
 	leavesPerMassif := mmr.HeightIndexLeafCount(uint64(massifHeight) - 1)
 	count := leavesPerMassif * uint64(massifCount)
 
-	err = tc.AddLeaves(ctx, tc.Cfg.LeafGenerator, committer, count)
+	generated, err := tc.AddLeaves(ctx, builder, 0, count)
 	require.NoError(tc.T, err)
-	return nil
+	return generated, nil
 }
 
-func (tc *TestContext[E, F]) AddLeavesToLog(
+func (tc *TestContext[E]) AddLeaves(
 	ctx context.Context,
-	logID storage.LogID, massifHeight uint8, count int,
-	opts ...massifs.Option,
-) error {
-
-	options := tc.Cfg.StorageOptions()
-
-	for _, opt := range opts {
-		opt(&options)
-	}
-	committer, err := tc.Factory.NewMassifCommitterStore(options)
-	require.NoError(tc.T, err)
-
-	tc.PathProvider.SelectLog(ctx, logID)
-	return tc.AddLeaves(ctx, tc.Cfg.LeafGenerator, committer, uint64(count))
-}
-
-func (tc *TestContext[E, F]) AddLeaves(
-	ctx context.Context,
-	leafGenerator LeafGenerator,
-	committer *massifs.MassifCommitter[massifs.CommitterStore],
+	builder LogBuilder,
+	base uint64,
 	count uint64,
-) error {
+) (GeneratedLeaves, error) {
 	if count <= 0 {
-		return nil
+		return GeneratedLeaves{}, nil
 	}
-	t := tc.T
-	mc, err := committer.GetAppendContext(ctx)
-	require.NoError(t, err)
-	batch := tc.G.GenerateLeafBatch(0, count, leafGenerator)
 
-	for _, args := range batch {
-
-		_, err = mc.AddHashedLeaf(
-			sha256.New(), args.ID, args.LogID, args.AppID, nil, args.Value)
-		if errors.Is(err, massifs.ErrMassifFull) {
-			err = committer.CommitContext(ctx, mc)
-			if err != nil {
-				return err
-			}
-			if !tc.Cfg.DisableSigning {
-				_, err = tc.SealHead(ctx, committer.Provider)
-				require.NoError(tc.T, err)
-			}
-			mc, err = committer.GetAppendContext(ctx)
-			if err != nil {
-				return err
-			}
-
-			// Remember to add the leaf we failed to add above
-			_, err = mc.AddHashedLeaf(
-				sha256.New(), args.ID, args.LogID, args.AppID, nil, args.Value)
-			if err != nil {
-				return err
-			}
-
-			err = nil
-		}
-		if err != nil {
-			return err
-		}
+	headIndexBefore, err := builder.MassifSealer.HeadIndex(ctx, storage.ObjectMassifData)
+	if errors.Is(err, storage.ErrDoesNotExist) || errors.Is(err, storage.ErrLogEmpty) {
+		headIndexBefore = 0
+		err = nil
 	}
-	err = committer.CommitContext(ctx, mc)
+	require.NoError(tc.T, err)
+
+	generated, err := tc.CommitLeaves(ctx, builder, base, count)
 	if err != nil {
-		return err
-	}
-	if !tc.Cfg.DisableSigning {
-		_, err = tc.SealHead(ctx, committer.Provider)
-		require.NoError(tc.T, err)
+		return generated, err
 	}
 
-	return nil
+	if !tc.Cfg.DisableSigning && builder.MassifSealer != nil {
+		headIndex, err := builder.MassifSealer.HeadIndex(ctx, storage.ObjectMassifData)
+		require.NoError(tc.T, err)
+		for i := headIndexBefore; i <= headIndex; i++ {
+			_, err := tc.SealIndex(ctx, builder.MassifSealer, i)
+			require.NoError(tc.T, err)
+		}
+	}
+
+	return generated, nil
 }
 
-func (tc *TestContext[E, F]) SealHead(
-	ctx context.Context, store MassifSealing) (*massifs.Checkpoint, error) {
+func (tc *TestContext[E]) SealIndex(
+	ctx context.Context, store HeadSealer, massifIndex uint32) (*massifs.Checkpoint, error) {
+
+	mc, err := store.GetMassifContext(ctx, massifIndex)
+	require.NoError(tc.T, err)
+	err = mc.CreatePeakStackMap()
+	require.NoError(tc.T, err)
+
+	chk, err := store.GetCheckpoint(ctx, massifIndex)
+	if err != nil {
+		if errors.Is(err, storage.ErrDoesNotExist) || errors.Is(err, storage.ErrLogEmpty) {
+			return tc.SealContext(ctx, store, mc, chk)
+		}
+		return nil, err
+	}
+
+	if chk.MMRState.MMRSize < mc.RangeCount() {
+		return tc.SealContext(ctx, store, mc, chk)
+	}
+	// already sealed (the equals case), or the seal is ahead of the massif.
+	// this is allowed here because we are supporting test code which may be
+	// purposfully setting up adverse conditions.
+	return chk, nil
+}
+
+func (tc *TestContext[E]) SealHead(
+	ctx context.Context, store HeadSealer) (*massifs.Checkpoint, error) {
 
 	massifIndex, err := store.HeadIndex(ctx, storage.ObjectMassifData)
 	require.NoError(tc.T, err)
@@ -312,7 +362,8 @@ func (tc *TestContext[E, F]) SealHead(
 	return chk, nil
 }
 
-func (tc *TestContext[E, F]) SealContext(ctx context.Context, store MassifSealing, mc *massifs.MassifContext, chk *massifs.Checkpoint) (*massifs.Checkpoint, error) {
+func (tc *TestContext[E]) SealContext(
+	ctx context.Context, store MassifPutter, mc *massifs.MassifContext, chk *massifs.Checkpoint) (*massifs.Checkpoint, error) {
 
 	var err error
 	var peaksB [][]byte
@@ -374,7 +425,7 @@ func (tc *TestContext[E, F]) SealContext(ctx context.Context, store MassifSealin
 	// Write checkpoint directly using Azure blob storage
 	// storagePath, err := tc.PathProvider.GetStoragePath(mc.Start.MassifIndex, storage.ObjectCheckpoint)
 	// require.NoError(tc.T, err)
-	err = store.Put(ctx, mc.Start.MassifIndex, storage.ObjectCheckpoint, data, true)
+	err = store.Put(ctx, mc.Start.MassifIndex, storage.ObjectCheckpoint, data, false)
 	require.NoError(tc.T, err)
 
 	// make the checkpoint for the next call to base itself off of
