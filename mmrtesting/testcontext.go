@@ -11,7 +11,7 @@ import (
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/datatrails/go-datatrails-merklelog/mmr"
-	"github.com/robinbryce/go-merklelog-azure/datatrails"
+	"github.com/forestrie/go-merklelog-datatrails/datatrails"
 	"github.com/stretchr/testify/require"
 
 	// TODO: phase this out
