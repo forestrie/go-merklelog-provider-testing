@@ -117,8 +117,8 @@ type MassifStorageEmulator interface {
 }
 
 type ObjectReaderWriter interface {
-	massifs.ObjectBaseReader
-	massifs.ObjectBaseWriter
+	massifs.ObjectReader
+	massifs.ObjectWriter
 }
 
 type LogDeleter func(logID storage.LogID)
@@ -132,8 +132,8 @@ type LogBuilder struct {
 	// // If this is not nil and DisableSealing is false then the log will be sealed after leaves are added
 	// MassifSealer MassifSealer
 
-	ObjectReader       massifs.ObjectBaseReader
-	ObjectWriter       massifs.ObjectBaseWriter
+	ObjectReader       massifs.ObjectReader
+	ObjectWriter       massifs.ObjectWriter
 	ObjectReaderWriter ObjectReaderWriter
 
 	DeleteLog LogDeleter
@@ -320,7 +320,7 @@ func (tc *TestContext[E]) AddLeaves(
 }
 
 func (tc *TestContext[E]) SealIndex(
-	ctx context.Context, store massifs.ObjectBaseReaderWriter, massifIndex uint32) (*massifs.Checkpoint, error) {
+	ctx context.Context, store massifs.ObjectReaderWriter, massifIndex uint32) (*massifs.Checkpoint, error) {
 
 	mc, err := massifs.GetMassifContext(ctx, store, massifIndex)
 	require.NoError(tc.T, err)

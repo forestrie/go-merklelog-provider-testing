@@ -205,7 +205,7 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 
 	// note: CreateLog both creates the massifs *and* populates them
 	// provider test context implementations always default to creating for the *source*
-	tc.CreateLog(ctx, sourceBuilder, logId0,massifHeight, 1)
+	tc.CreateLog(ctx, sourceBuilder, logId0, massifHeight, 1)
 
 	vr := massifs.VerifyingReplicator{
 		CBORCodec:    tc.GetTestCfg().CBORCodec,
@@ -280,7 +280,7 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 //
 //	[]byte{0x0D, 0x0E, 0x0A, 0x0D, 0x0B, 0x0E, 0x0E, 0x0F}
 func tamperSinkNode(
-	t *testing.T, objectStore massifs.ObjectBaseReaderWriter,
+	t *testing.T, objectStore massifs.ObjectReaderWriter,
 	massifHeight uint8, mmrIndex uint64, tamperedValue []byte,
 ) {
 	var err error
