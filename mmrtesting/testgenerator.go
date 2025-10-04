@@ -11,6 +11,7 @@ import (
 	"time"
 
 	commoncbor "github.com/datatrails/go-datatrails-common/cbor"
+	"github.com/datatrails/go-datatrails-merklelog/massifs"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/snowflakeid"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/google/uuid"
@@ -65,12 +66,14 @@ func (g *TestGenerator) Init(t *testing.T, cfg *TestOptions) {
 
 	g.T = t
 	g.WordCannon = cfg.WordList
-	g.CBORCodec = cfg.CBORCodec
+	codec, err := massifs.NewCBORCodec()
+	require.NoError(t, err)
+	g.CBORCodec = &codec
+
 	g.Rand = cfg.Rand
 	g.StartTime = time.UnixMilli(cfg.StartTimeMS)
 	g.LastTime = time.UnixMilli(cfg.StartTimeMS)
 
-	var err error
 	g.IDState, err = snowflakeid.NewIDState(snowflakeid.Config{
 		CommitmentEpoch: 1,
 		WorkerCIDR:      "0.0.0.0/16",
@@ -96,19 +99,6 @@ func (g *TestGenerator) NextID() (uint64, error) {
 		}
 	}
 	return id, nil
-}
-
-func NewGenericLeafGenerator(g *TestGenerator, logID storage.LogID) LeafGenerator {
-	leafGenerator := LeafGenerator{
-		LogID: logID,
-		Generator: func(logID storage.LogID, base, i uint64) any {
-			return g.GenerateLeafContent(logID, base, i)
-		},
-		Encoder: func(a any) AddLeafArgs {
-			return g.EncodeLeafForAddition(a)
-		},
-	}
-	return leafGenerator
 }
 
 func (g *TestGenerator) EncodeLeafForAddition(a any) AddLeafArgs {

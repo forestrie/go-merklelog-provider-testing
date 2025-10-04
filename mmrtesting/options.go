@@ -10,14 +10,15 @@ import (
 
 	commoncbor "github.com/datatrails/go-datatrails-common/cbor"
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/google/uuid"
 	"github.com/veraison/go-cose"
 )
 
 // TestOptions holds options generic for all storage implementations.
 type TestOptions struct {
 	massifs.SignerOptions
-	massifs.StorageOptions
+	CBORCodec           commoncbor.CBORCodec
+	COSEVerifier        cose.Verifier
+	DefaultMassifHeight uint8
 	// We seed the RNG of the provided StartTimeMS. It is normal to force it to
 	// some fixed value so that the generated data is the same from run to run.
 	StartTimeMS     int64
@@ -35,16 +36,6 @@ type TestOptions struct {
 }
 
 // WithCommitmentEpoch sets the CommitmentEpoch option for TestOptions.
-
-func WithMassifHeight(height uint8) massifs.Option {
-	return func(o any) {
-		options, ok := o.(*TestOptions)
-		if !ok {
-			return
-		}
-		options.MassifHeight = height
-	}
-}
 
 func WithNoSigning() massifs.Option {
 	return func(o any) {
@@ -92,22 +83,6 @@ func WithTestLabelPrefix(prefix string) massifs.Option {
 	}
 }
 
-func WithCBORCodec(codec *commoncbor.CBORCodec) func(any) {
-	return func(opts any) {
-		if storageOpts, ok := opts.(*TestOptions); ok {
-			storageOpts.CBORCodec = codec
-		}
-	}
-}
-
-func WithCOSEVerifier(verifier cose.Verifier) func(any) {
-	return func(opts any) {
-		if storageOpts, ok := opts.(*TestOptions); ok {
-			storageOpts.COSEVerifier = verifier
-		}
-	}
-}
-
 func (o *TestOptions) EnsureDefaults(t *testing.T) {
 
 	WithDefaults()(o)
@@ -137,12 +112,10 @@ func WithDefaults() massifs.Option {
 			options.CheckpointIssuer = DefaultCheckpointIssuer
 		}
 
-		if options.MassifHeight == 0 {
-			options.MassifHeight = 14 // default to 14, which is the height
+		if options.DefaultMassifHeight == 0 {
+			options.DefaultMassifHeight = 14 // production default
 		}
-		if options.CommitmentEpoch == 0 {
-			options.CommitmentEpoch = 1 // good until 2038 for real. irrelevant for tests as long as everyone uses the same value
-		}
+
 		if options.StartTimeMS == 0 {
 			options.StartTimeMS = (1698342521) * 1000
 		}
@@ -161,14 +134,6 @@ func WithDefaults() massifs.Option {
 			a := options.WordList[options.Rand.Intn(len(options.WordList))]
 			b := options.WordList[options.Rand.Intn(len(options.WordList))]
 			options.TestLabelPrefix = fmt.Sprintf("mmrtesting.%s-%s", a, b)
-		}
-
-		if options.LogID == nil {
-			id, err := uuid.NewRandomFromReader(options.Rand)
-			if err != nil {
-				panic("failed to generate random LogID: " + err.Error())
-			}
-			options.LogID = id[:]
 		}
 
 		if !options.DisableSigning && options.Signer == nil {
@@ -192,16 +157,6 @@ func WithDefaults() massifs.Option {
 					options.errs = append(options.errs, fmt.Errorf("failed to create signer: %w", err))
 				}
 			}
-		}
-		if options.CBORCodec == nil {
-			var err error
-			var codec commoncbor.CBORCodec
-
-			codec, err = massifs.NewCBORCodec()
-			if err != nil {
-				options.errs = append(options.errs, fmt.Errorf("failed to create CBOR codec: %w", err))
-			}
-			options.CBORCodec = &codec
 		}
 	}
 }

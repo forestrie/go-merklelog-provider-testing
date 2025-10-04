@@ -21,7 +21,6 @@ type AddLeafArgs struct {
 type LeafGenerator struct {
 	// base uint64,
 	// count uint64,
-	LogID     storage.LogID
 	Generator LeafContentGenerator
 	Encoder   AddLeafArgsEncoder
 }
@@ -38,16 +37,15 @@ type AddLeafArgsGenerator func(logID storage.LogID, base, i uint64) AddLeafArgs
 type LeafContentGenerator func(logID storage.LogID, base, i uint64) any
 type AddLeafArgsEncoder func(a any) AddLeafArgs
 
-func NewLeafGenerator(logID storage.LogID, gen LeafContentGenerator, enc AddLeafArgsEncoder) LeafGenerator {
+func NewLeafGenerator(gen LeafContentGenerator, enc AddLeafArgsEncoder) LeafGenerator {
 	return LeafGenerator{
-		LogID:     logID,
 		Generator: gen,
 		Encoder:   enc,
 	}
 }
 
-func (g *LeafGenerator) Generate(base, i uint64) (AddLeafArgs, any) {
-	content := g.Generator(g.LogID, base, i)
+func (g *LeafGenerator) Generate(logID storage.LogID, base, i uint64) (AddLeafArgs, any) {
+	content := g.Generator(logID, base, i)
 	addArgs := g.Encoder(content)
 	return addArgs, content
 }

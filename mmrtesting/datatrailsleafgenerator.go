@@ -15,9 +15,8 @@ const (
 	// DefaultCheckpointIssuer = "https://github.com/robinbryce/testing/checkpoint-issuer/default"
 )
 
-func NewDataTrailsLeafGenerator(g *TestGenerator, logID storage.LogID) LeafGenerator {
+func NewDataTrailsLeafGenerator(g *TestGenerator) LeafGenerator {
 	leafGenerator := LeafGenerator{
-		LogID: logID,
 		Generator: func(logID storage.LogID, base, i uint64) any {
 			return g.DataTrailsGenerateLeafContent(logID, base, i)
 		},

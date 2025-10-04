@@ -13,42 +13,14 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// StorageVerifyingReplicatorContext is the required context specific to the StorageVerifyingReplicator tests
-type StorageVerifyingReplicatorContext struct {
-
-	// The following members are used to prepare and manipulate the test data
-
-	//  SourceCreatorFactory provides full read, write and append access to the
-	//  source log. It is used to populate and manipulate test data.
-	SourceCreatorFactory BuilderFactory
-
-	// SinkCreatorFactory provides full read, write and append access to the
-	// sink log storage for the purpose of generating or manipulating test data.
-	SinkCreatorFactory BuilderFactory
-
-	// The following members are used to create the source and sink instances
-	// for the tests.
-
-	// SourceFactory creates the instance of the source store for replication
-	// operations under test. Depending on the implementation this may be the
-	// same as the SourceCreatorFactory, but should always return an independent
-	// instance.
-	SourceFactory ReplicationSourceFactory
-
-	// SinkFactory creates the instance of the sink store for replication
-	// operations under test.  Depending on the implementation this may be the
-	// same as the SinkCreatorFactory, but should always return an independent
-	// instance.
-	SinkFactory VerifyingExtenderFactory
-}
-
 // TestReplicateMassifUpdate ensures that an extension to a previously replicated
 // massif is handled correctly
 
 func StorageVerifyingReplicatorSinkExtension(
 	s *suite.Suite,
 	tc mmrtesting.ProviderTestContext,
-	sc *StorageVerifyingReplicatorContext,
+	sourceFactory BuilderFactory,
+	sinkFactory BuilderFactory,
 ) {
 	t := tc.GetT()
 	ctx := t.Context()
@@ -84,24 +56,24 @@ func StorageVerifyingReplicatorSinkExtension(
 
 			// tc.GenerateTenantLog(10, massifHeight, 0 /* leaf type plain */)
 			logId0 := tc.GetG().NewLogID()
-			sourceCreator := sc.SourceCreatorFactory(
-				massifs.StorageOptions{LogID: logId0, MassifHeight: tt.massifHeight})
 
-			sinkCreator := sc.SinkCreatorFactory(
-				massifs.StorageOptions{LogID: logId0, MassifHeight: tt.massifHeight})
+			sourceBuilder := sourceFactory()
+			sinkBuilder := sinkFactory()
+			sourceBuilder.SelectLog(ctx, logId0)
+			sinkBuilder.SelectLog(ctx, logId0)
 
 			// If we skip CreateLog below, we need to delete the blobs
-			sourceCreator.DeleteLog(logId0)
-			sinkCreator.DeleteLog(logId0)
+			sourceBuilder.DeleteLog(logId0)
+			sinkBuilder.DeleteLog(logId0)
 
 			if tt.firstUpdateMassifs > 0 {
 				tc.CreateLog(
-					ctx, sourceCreator, tt.massifHeight, uint32(tt.firstUpdateMassifs),
+					ctx, sourceBuilder, logId0, tt.massifHeight, uint32(tt.firstUpdateMassifs),
 				)
 			}
 			if tt.firstUpdateExtraLeaves > 0 {
 				tc.AddLeaves(
-					ctx, sourceCreator, tt.firstUpdateMassifs*leavesPerMassif, tt.firstUpdateExtraLeaves,
+					ctx, sourceBuilder, logId0, tt.massifHeight, tt.firstUpdateMassifs*leavesPerMassif, tt.firstUpdateExtraLeaves,
 				)
 			}
 
@@ -118,21 +90,23 @@ func StorageVerifyingReplicatorSinkExtension(
 				assert.Equal(t, expectHead, head)
 			}
 
-			assertHeadEq(sourceCreator.MassifSealer, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs), nil)
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs), storage.ErrDoesNotExist)
-			assertHeadEq(sourceCreator.MassifSealer, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs), nil)
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs), storage.ErrDoesNotExist)
+			assertHeadEq(sourceBuilder.ObjectReader, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs), nil)
+			assertHeadEq(sinkBuilder.ObjectReader, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs), storage.ErrDoesNotExist)
+			assertHeadEq(sourceBuilder.ObjectReader, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs), nil)
+			assertHeadEq(sinkBuilder.ObjectReader, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs), storage.ErrDoesNotExist)
 
 			// Replicate the log
 			vr := massifs.VerifyingReplicator{
-				Sink:   sc.SinkFactory(massifs.StorageOptions{MassifHeight: tt.massifHeight}),
-				Source: sc.SourceFactory(massifs.StorageOptions{MassifHeight: tt.massifHeight}),
+				CBORCodec:    tc.GetTestCfg().CBORCodec,
+				COSEVerifier: tc.GetTestCfg().COSEVerifier,
+				Source:       sourceFactory().ObjectReader,
+				Sink:         sinkFactory().ObjectReaderWriter,
 			}
 			// note: firstUpdateMassifs is the count of *full* massifs we add before adding the leaves, so the count is also the "index" of the last massif.
-			err := vr.ReplicateVerifiedUpdates(ctx, logId0, uint32(0), uint32(tt.firstUpdateMassifs))
+			err := vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(tt.firstUpdateMassifs))
 			require.NoError(t, err)
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs), nil)
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs), nil)
+			assertHeadEq(sinkBuilder.ObjectReader, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs), nil)
+			assertHeadEq(sinkBuilder.ObjectReader, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs), nil)
 
 			// Add the content for the second update
 
@@ -140,7 +114,8 @@ func StorageVerifyingReplicatorSinkExtension(
 				// CreateLog always deleted blobs, so we can only use AddLeavesToLog here
 				for range tt.secondUpdateMassifs {
 					tc.AddLeaves(
-						ctx, sourceCreator,
+						ctx, sourceFactory(),
+						logId0, tt.massifHeight,
 						(tt.firstUpdateMassifs*leavesPerMassif)+tt.firstUpdateExtraLeaves,
 						leavesPerMassif,
 					)
@@ -149,34 +124,37 @@ func StorageVerifyingReplicatorSinkExtension(
 
 			if tt.secondUpdateExtraLeaves > 0 {
 				tc.AddLeaves(
-					ctx, sourceCreator,
+					ctx, sourceFactory(),
+					logId0, tt.massifHeight,
 					(tt.firstUpdateMassifs*leavesPerMassif)+(tt.secondUpdateMassifs*leavesPerMassif)+tt.firstUpdateExtraLeaves,
 					tt.secondUpdateExtraLeaves,
 				)
 			}
 
 			vr = massifs.VerifyingReplicator{
-				Sink:   sc.SinkFactory(massifs.StorageOptions{MassifHeight: tt.massifHeight}),
-				Source: sc.SourceFactory(massifs.StorageOptions{MassifHeight: tt.massifHeight}),
+				CBORCodec:    tc.GetTestCfg().CBORCodec,
+				COSEVerifier: tc.GetTestCfg().COSEVerifier,
+				Source:       sourceFactory().ObjectReader,
+				Sink:         sinkFactory().ObjectReaderWriter,
 			}
 			// note: firstUpdateMassifs is the count of *full* massifs we add before adding the leaves, so the count is also the "index" of the last massif.
-			err = vr.ReplicateVerifiedUpdates(ctx, logId0, uint32(0), uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs))
+			err = vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs))
 			require.NoError(t, err)
 
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
+			assertHeadEq(vr.Sink, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
+			assertHeadEq(vr.Sink, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
 
 			// Attempt to replicate again, this will verify the sink state and then do nothing
 			vr = massifs.VerifyingReplicator{
-				Sink:   sc.SinkFactory(massifs.StorageOptions{MassifHeight: tt.massifHeight}),
-				Source: sc.SourceFactory(massifs.StorageOptions{MassifHeight: tt.massifHeight}),
+				Source: sourceFactory().ObjectReader,
+				Sink:   sinkFactory().ObjectReaderWriter,
 			}
 			// note: firstUpdateMassifs is the count of *full* massifs we add before adding the leaves, so the count is also the "index" of the last massif.
-			err = vr.ReplicateVerifiedUpdates(ctx, logId0, uint32(0), uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs))
+			err = vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs))
 			require.NoError(t, err)
 
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
-			assertHeadEq(sinkCreator.MassifSealer, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
+			assertHeadEq(vr.Sink, storage.ObjectMassifData, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
+			assertHeadEq(vr.Sink, storage.ObjectCheckpoint, uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs), nil)
 
 			s.NoError(err)
 		})
@@ -200,7 +178,8 @@ func StorageVerifyingReplicatorSinkExtension(
 // proven
 func StorageVerifyingReplicatorSinkTamperDetected(
 	tc mmrtesting.ProviderTestContext,
-	sc *StorageVerifyingReplicatorContext,
+	sourceFactory BuilderFactory,
+	sinkFactory BuilderFactory,
 ) {
 
 	var err error
@@ -219,21 +198,22 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 	// re-produce the root needed for the local seal to verify.
 	logId0 := tc.GetG().NewLogID()
 
-	sourceCreator := sc.SourceCreatorFactory(
-		massifs.StorageOptions{LogID: logId0, MassifHeight: massifHeight})
-
-	sinkCreator := sc.SinkCreatorFactory(
-		massifs.StorageOptions{LogID: logId0, MassifHeight: massifHeight})
+	sourceBuilder := sourceFactory()
+	sinkBuilder := sinkFactory()
+	sourceBuilder.SelectLog(ctx, logId0)
+	sinkBuilder.SelectLog(ctx, logId0)
 
 	// note: CreateLog both creates the massifs *and* populates them
 	// provider test context implementations always default to creating for the *source*
-	tc.CreateLog(ctx, sourceCreator, massifHeight, 1)
+	tc.CreateLog(ctx, sourceBuilder, logId0,massifHeight, 1)
 
 	vr := massifs.VerifyingReplicator{
-		Sink:   sc.SinkFactory(massifs.StorageOptions{MassifHeight: massifHeight}),
-		Source: sc.SourceFactory(massifs.StorageOptions{MassifHeight: massifHeight}),
+		CBORCodec:    tc.GetTestCfg().CBORCodec,
+		COSEVerifier: tc.GetTestCfg().COSEVerifier,
+		Source:       sourceBuilder.ObjectReader,
+		Sink:         sinkBuilder.ObjectReaderWriter,
 	}
-	err = vr.ReplicateVerifiedUpdates(ctx, logId0, uint32(0), uint32(1))
+	err = vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(1))
 	require.NoError(t, err)
 
 	massifLeafCount := mmr.HeightIndexLeafCount(uint64(massifHeight) - 1)
@@ -248,7 +228,7 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 	// accumulators (all peak hashes) or a single bagged peak, the local log
 	// will be unable to produce the correct detached payload for the Sign1 seal
 	// over the root material.
-	tamperSinkNode(t, sourceCreator.ObjectStore, logId0,
+	tamperSinkNode(t, sourceBuilder.ObjectReaderWriter,
 		massifHeight, peaks[len(peaks)-1], []byte{0x0D, 0x0E, 0x0A, 0x0D, 0x0B, 0x0E, 0x0E, 0x0F})
 
 	// Note: it's actually a property of the way massifs fill that the last node
@@ -258,38 +238,38 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 
 	// add the rest of the massifs
 	for i := uint32(1); i < massifCount; i++ {
-		tc.AddLeaves(ctx, sourceCreator, uint64(uint64(i)*leavesPerMassif), uint64(leavesPerMassif))
+		tc.AddLeaves(ctx, sourceBuilder, logId0, massifHeight, uint64(uint64(i)*leavesPerMassif), uint64(leavesPerMassif))
 	}
+
+	sourceBuilder = sourceFactory()
+	sinkBuilder = sinkFactory()
+	sourceBuilder.SelectLog(ctx, logId0)
+	sinkBuilder.SelectLog(ctx, logId0)
 
 	// Note: we create a new context so that implementations can be fooled by cached state
 	vr = massifs.VerifyingReplicator{
-		Sink:   sc.SinkFactory(massifs.StorageOptions{MassifHeight: massifHeight}),
-		Source: sc.SourceFactory(massifs.StorageOptions{MassifHeight: massifHeight}),
+		CBORCodec:    tc.GetTestCfg().CBORCodec,
+		COSEVerifier: tc.GetTestCfg().COSEVerifier,
+		Sink:         sinkBuilder.ObjectReaderWriter,
+		Source:       sourceBuilder.ObjectReader,
 	}
-	err = vr.ReplicateVerifiedUpdates(ctx, logId0, uint32(0), massifCount-1)
+	err = vr.ReplicateVerifiedUpdates(ctx, uint32(0), massifCount-1)
 	require.ErrorIs(t, err, massifs.ErrSealVerifyFailed)
 
 	// check the 0'th massifs and seals was replicated (by the first run)
-
-	_, err = sinkCreator.ObjectStore.GetMassifContext(ctx, 0)
+	_, err = massifs.GetMassifContext(ctx, vr.Sink, 0)
 	require.NoError(t, err)
-	_, err = sinkCreator.ObjectStore.GetCheckpoint(ctx, 0)
+	_, err = massifs.GetCheckpoint(ctx, vr.Sink, vr.CBORCodec, 0)
 	require.NoError(t, err)
 
 	// check the massifs from the second veracity run were NOT replicated
 	for i := uint32(1); i < massifCount; i++ {
 
-		_, err = sinkCreator.ObjectStore.GetMassifContext(ctx, i)
+		_, err = massifs.GetMassifContext(ctx, vr.Sink, i)
 		require.ErrorIs(t, err, storage.ErrDoesNotExist)
-		_, err = sinkCreator.ObjectStore.GetCheckpoint(ctx, i)
+		_, err = massifs.GetCheckpoint(ctx, vr.Sink, vr.CBORCodec, i)
 		require.NoError(t, err, storage.ErrDoesNotExist)
 	}
-}
-
-type objectStore interface {
-	SelectLog(ctx context.Context, logId storage.LogID) error
-	Put(ctx context.Context, massifIndex uint32, otype storage.ObjectType, data []byte, failIfExists bool) error
-	GetMassifContext(ctx context.Context, massifIndex uint32) (*massifs.MassifContext, error)
 }
 
 // tamperSinkNode over-writes the log entry at the given mmrIndex with the provided bytes
@@ -300,7 +280,7 @@ type objectStore interface {
 //
 //	[]byte{0x0D, 0x0E, 0x0A, 0x0D, 0x0B, 0x0E, 0x0E, 0x0F}
 func tamperSinkNode(
-	t *testing.T, objectStore objectStore, logID storage.LogID,
+	t *testing.T, objectStore massifs.ObjectBaseReaderWriter,
 	massifHeight uint8, mmrIndex uint64, tamperedValue []byte,
 ) {
 	var err error
@@ -310,13 +290,14 @@ func tamperSinkNode(
 	leafIndex := mmr.LeafIndex(mmrIndex)
 	massifIndex := uint32(massifs.MassifIndexFromLeafIndex(massifHeight, leafIndex))
 
-	err = objectStore.SelectLog(context.TODO(), logID)
-	require.NoError(t, err)
-	mc, err := objectStore.GetMassifContext(context.TODO(), massifIndex)
+	// err = objectStore.SelectLog(context.TODO(), logID)
+	// require.NoError(t, err)
+
+	mc, err := massifs.GetMassifContext(t.Context(), objectStore, massifIndex)
 	require.NoError(t, err)
 
 	i := mmrIndex - mc.Start.FirstIndex
 	logData := mc.Data[mc.LogStart():]
 	copy(logData[i*massifs.LogEntryBytes:i*massifs.LogEntryBytes+8], tamperedValue)
-	objectStore.Put(context.TODO(), massifIndex, storage.ObjectMassifData, mc.Data, false)
+	objectStore.Put(t.Context(), massifIndex, storage.ObjectMassifData, mc.Data, false)
 }

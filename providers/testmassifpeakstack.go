@@ -11,13 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// StoragePeakStackContext is the required context specific to the StorageVerifyingReplicator tests
-type StoragePeakStackContext struct {
-
-	// BuilderFactory is used to create the log, and peak stack, for the tests.
-	BuilderFactory BuilderFactory
-}
-
 func StoragePeakStackStartNextMassifTest(
 	tc mmrtesting.ProviderTestContext) {
 
@@ -400,15 +393,17 @@ func StoragePeakStackStartNextMassifTest(
 }
 
 // StoragePeakStackHeight4Massif2to3Size63Test reproduces a peak stack issue
-func StoragePeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestContext, sc *StoragePeakStackContext) {
+func StoragePeakStackHeight4Massif2to3Size63Test(
+	tc mmrtesting.ProviderTestContext, factory BuilderFactory) {
 	t := tc.GetT()
 	ctx := t.Context()
 	logID := tc.GetG().NewLogID()
 
-	MassifHeight := uint8(4)
-	storageOpts := massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight}
+	massifHeight := uint8(4)
 
-	builder := sc.BuilderFactory(storageOpts)
+	builder := factory()
+	builder.DeleteLog(logID)
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
 	// caller should do this, they have the native interface
 	// pth := tc.StoragePrefix(logID)
@@ -417,12 +412,11 @@ func StoragePeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestConte
 	mmrSizeB := uint64(63)
 	nLeaves := mmr.LeafCount(mmrSizeB)
 
-	_, err := tc.CommitLeaves(ctx, builder, 0, nLeaves)
+	_, err := tc.CommitLeaves(ctx, builder, logID, massifHeight, 0, nLeaves)
 	require.Nil(t, err)
 
 	// this fails
-	massifGetter := builder.ObjectStore
-	mc3, err := massifGetter.GetMassifContext(ctx, 3)
+	mc3, err := massifs.GetMassifContext(ctx, builder.ObjectReader, 3)
 	require.NoError(t, err)
 	err = mc3.CreatePeakStackMap()
 	require.NoError(t, err)
@@ -435,10 +429,10 @@ func StoragePeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestConte
 	iBaseLeafNode45 := iPeakNode45 - mmr.IndexHeight(iPeakNode45)
 	iLeaf45 := mmr.LeafCount(iBaseLeafNode45)
 
-	hsz := mmr.HeightSize(uint64(storageOpts.MassifHeight))
+	hsz := mmr.HeightSize(uint64(massifHeight))
 	hlc := (hsz + 1) / 2
 	mi30 := uint32(iLeaf30 / hlc)
-	mcPeakNode30, err := massifGetter.GetMassifContext(ctx, mi30)
+	mcPeakNode30, err := massifs.GetMassifContext(ctx, builder.ObjectReader, mi30)
 	require.NoError(t, err)
 	peakNode30, err := mcPeakNode30.Get(iPeakNode30)
 	require.NoError(t, err)
@@ -446,7 +440,7 @@ func StoragePeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestConte
 	require.NoError(t, err)
 
 	mi45 := uint32(iLeaf45 / hlc)
-	mcPeakNode45, err := massifGetter.GetMassifContext(ctx, mi45)
+	mcPeakNode45, err := massifs.GetMassifContext(ctx, builder.ObjectReader, mi45)
 	require.NoError(t, err)
 	peakNode45, err := mcPeakNode45.Get(iPeakNode45)
 	require.NoError(t, err)
@@ -498,13 +492,13 @@ func StoragePeakStackHeight4Massif2to3Size63Test(tc mmrtesting.ProviderTestConte
 	assert.Equal(t, mc3.PeakStackMap[iPeakNode30], iStack30)
 	assert.Equal(t, mc3.PeakStackMap[iPeakNode45], iStack45)
 
-	proof, err := mmr.InclusionProofBagged(mmrSizeB, mc3, sha256.New(), iPeakNode30)
+	proof, err := mmr.InclusionProofBagged(mmrSizeB, &mc3, sha256.New(), iPeakNode30)
 	require.NoError(t, err)
 
 	peakHash, err := mc3.Get(iPeakNode30)
 	require.NoError(t, err)
 
-	root, err := mmr.GetRoot(mmrSizeB, mc3, sha256.New())
+	root, err := mmr.GetRoot(mmrSizeB, &mc3, sha256.New())
 	require.NoError(t, err)
 	ok = mmr.VerifyInclusionBagged(mmrSizeB, sha256.New(), peakHash, 30, proof, root)
 	assert.True(t, ok)

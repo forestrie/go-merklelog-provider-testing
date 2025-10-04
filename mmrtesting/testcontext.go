@@ -36,6 +36,8 @@ type ProviderTestContext interface {
 	CommitLeaves(
 		ctx context.Context,
 		builder LogBuilder,
+		logID storage.LogID,
+		massifHeight uint8,
 		base uint64,
 		count uint64,
 	) (GeneratedLeaves, error)
@@ -43,12 +45,15 @@ type ProviderTestContext interface {
 	CreateLog(
 		ctx context.Context,
 		builder LogBuilder,
+		logID storage.LogID,
 		massifHeight uint8, massifCount uint32,
 	) (GeneratedLeaves, error)
 
 	AddLeaves(
 		ctx context.Context,
 		builder LogBuilder,
+		logID storage.LogID,
+		massifHeight uint8,
 		base uint64,
 		count uint64,
 	) (GeneratedLeaves, error)
@@ -111,22 +116,30 @@ type MassifStorageEmulator interface {
 	DeleteByStoragePrefix(storagePrefixPath string)
 }
 
+type ObjectReaderWriter interface {
+	massifs.ObjectBaseReader
+	massifs.ObjectBaseWriter
+}
+
 type LogDeleter func(logID storage.LogID)
+type LogSelector func(ctx context.Context, logID storage.LogID) error
 
 type LogBuilder struct {
 
 	// LeafGenerator creates leaf content and the associated AddLeafArgs for adding it to a massif log
 	LeafGenerator LeafGenerator
-	// MassifCommitter is the regular minimal interface for extending a massif log
-	MassifCommitter MassifCommitter
 
-	// If this is not nil and DisableSealing is false then the log will be sealed after leaves are added
-	MassifSealer MassifSealer
+	// // If this is not nil and DisableSealing is false then the log will be sealed after leaves are added
+	// MassifSealer MassifSealer
 
-	// Used for general inspection of the store, all providers have to be able to satisfy this
-	ObjectStore ObjectStore
+	ObjectReader       massifs.ObjectBaseReader
+	ObjectWriter       massifs.ObjectBaseWriter
+	ObjectReaderWriter ObjectReaderWriter
 
 	DeleteLog LogDeleter
+
+	// selects for reader, writer and reader/writer
+	SelectLog LogSelector
 }
 
 type TestContext[E MassifStorageEmulator] struct {
@@ -176,8 +189,6 @@ func (c *TestContext[E]) Init(t *testing.T, opts *TestOptions) {
 	c.G.Init(t, opts)
 	c.Cfg = opts
 
-	c.Emulator.DeleteByStoragePrefix(datatrails.StoragePrefixPath(c.Cfg.LogID))
-
 	require.True(t, opts.DisableSigning || opts.Signer != nil, "unless signing is disabled we must have a putter")
 
 	c.Cfg = opts
@@ -190,6 +201,8 @@ func (tc *TestContext[E]) PadWithNumberedLeaves(data []byte, first, n int) []byt
 func (tc *TestContext[E]) CommitLeaves(
 	ctx context.Context,
 	builder LogBuilder,
+	logID storage.LogID,
+	massifHeight uint8,
 	base uint64,
 	count uint64,
 ) (GeneratedLeaves, error) {
@@ -197,14 +210,16 @@ func (tc *TestContext[E]) CommitLeaves(
 		return GeneratedLeaves{}, nil
 	}
 	t := tc.T
-	mc, err := builder.MassifCommitter.GetAppendContext(ctx)
+	mc, err := massifs.GetAppendContext(
+		ctx, builder.ObjectReader,
+		uint32(1), massifHeight)
 	require.NoError(t, err)
 
 	generated := GeneratedLeaves{}
 
 	for i := uint64(0); i < count; i++ {
 
-		addArgs, content := builder.LeafGenerator.Generate(base, i)
+		addArgs, content := builder.LeafGenerator.Generate(logID, base, i)
 
 		generated.Encoded = append(generated.Encoded, content)
 		generated.Args = append(generated.Args, addArgs)
@@ -217,11 +232,13 @@ func (tc *TestContext[E]) CommitLeaves(
 		_, err = mc.AddHashedLeaf(
 			sha256.New(), addArgs.ID, nil, addArgs.LogID, addArgs.AppID, addArgs.Value)
 		if errors.Is(err, massifs.ErrMassifFull) {
-			err = builder.MassifCommitter.CommitContext(ctx, mc)
+			err = massifs.CommitContext(ctx, builder.ObjectWriter, &mc)
 			if err != nil {
 				return generated, err
 			}
-			mc, err = builder.MassifCommitter.GetAppendContext(ctx)
+			mc, err = massifs.GetAppendContext(
+				ctx, builder.ObjectReader,
+				uint32(1), massifHeight)
 			if err != nil {
 				return generated, err
 			}
@@ -239,7 +256,7 @@ func (tc *TestContext[E]) CommitLeaves(
 			return generated, err
 		}
 	}
-	err = builder.MassifCommitter.CommitContext(ctx, mc)
+	err = massifs.CommitContext(ctx, builder.ObjectWriter, &mc)
 	if err != nil {
 		return generated, err
 	}
@@ -250,17 +267,18 @@ func (tc *TestContext[E]) CommitLeaves(
 func (tc *TestContext[E]) CreateLog(
 	ctx context.Context,
 	builder LogBuilder,
+	logID storage.LogID,
 	// massifHeight must correspond to the height used to create the committer
 	// in order for massifCount to be accurately interpreted
 	massifHeight uint8, massifCount uint32,
 ) (GeneratedLeaves, error) {
 
-	tc.DeleteLog(builder.LeafGenerator.LogID)
+	tc.DeleteLog(logID)
 
 	leavesPerMassif := mmr.HeightIndexLeafCount(uint64(massifHeight) - 1)
 	count := leavesPerMassif * uint64(massifCount)
 
-	generated, err := tc.AddLeaves(ctx, builder, 0, count)
+	generated, err := tc.AddLeaves(ctx, builder, logID, massifHeight, 0, count)
 	require.NoError(tc.T, err)
 	return generated, nil
 }
@@ -268,6 +286,8 @@ func (tc *TestContext[E]) CreateLog(
 func (tc *TestContext[E]) AddLeaves(
 	ctx context.Context,
 	builder LogBuilder,
+	logID storage.LogID,
+	massifHeight uint8,
 	base uint64,
 	count uint64,
 ) (GeneratedLeaves, error) {
@@ -275,23 +295,23 @@ func (tc *TestContext[E]) AddLeaves(
 		return GeneratedLeaves{}, nil
 	}
 
-	headIndexBefore, err := builder.MassifSealer.HeadIndex(ctx, storage.ObjectMassifData)
+	headIndexBefore, err := builder.ObjectReader.HeadIndex(ctx, storage.ObjectMassifData)
 	if errors.Is(err, storage.ErrDoesNotExist) || errors.Is(err, storage.ErrLogEmpty) {
 		headIndexBefore = 0
 		err = nil
 	}
 	require.NoError(tc.T, err)
 
-	generated, err := tc.CommitLeaves(ctx, builder, base, count)
+	generated, err := tc.CommitLeaves(ctx, builder, logID, massifHeight, base, count)
 	if err != nil {
 		return generated, err
 	}
 
-	if !tc.Cfg.DisableSigning && builder.MassifSealer != nil {
-		headIndex, err := builder.MassifSealer.HeadIndex(ctx, storage.ObjectMassifData)
+	if !tc.Cfg.DisableSigning {
+		headIndex, err := builder.ObjectReader.HeadIndex(ctx, storage.ObjectMassifData)
 		require.NoError(tc.T, err)
 		for i := headIndexBefore; i <= headIndex; i++ {
-			_, err := tc.SealIndex(ctx, builder.MassifSealer, i)
+			_, err := tc.SealIndex(ctx, builder.ObjectReaderWriter, i)
 			require.NoError(tc.T, err)
 		}
 	}
@@ -300,28 +320,31 @@ func (tc *TestContext[E]) AddLeaves(
 }
 
 func (tc *TestContext[E]) SealIndex(
-	ctx context.Context, store HeadSealer, massifIndex uint32) (*massifs.Checkpoint, error) {
+	ctx context.Context, store massifs.ObjectBaseReaderWriter, massifIndex uint32) (*massifs.Checkpoint, error) {
 
-	mc, err := store.GetMassifContext(ctx, massifIndex)
+	mc, err := massifs.GetMassifContext(ctx, store, massifIndex)
 	require.NoError(tc.T, err)
 	err = mc.CreatePeakStackMap()
 	require.NoError(tc.T, err)
 
-	chk, err := store.GetCheckpoint(ctx, massifIndex)
+	codec, err := massifs.NewRootSignerCodec()
+	require.NoError(tc.T, err)
+
+	chk, err := massifs.GetCheckpoint(ctx, store, codec, massifIndex)
 	if err != nil {
 		if errors.Is(err, storage.ErrDoesNotExist) || errors.Is(err, storage.ErrLogEmpty) {
-			return tc.SealContext(ctx, store, mc, chk)
+			return tc.SealContext(ctx, store, &mc, &chk)
 		}
 		return nil, err
 	}
 
 	if chk.MMRState.MMRSize < mc.RangeCount() {
-		return tc.SealContext(ctx, store, mc, chk)
+		return tc.SealContext(ctx, store, &mc, &chk)
 	}
 	// already sealed (the equals case), or the seal is ahead of the massif.
 	// this is allowed here because we are supporting test code which may be
-	// purposfully setting up adverse conditions.
-	return chk, nil
+	// purposefully setting up adverse conditions.
+	return &chk, nil
 }
 
 func (tc *TestContext[E]) SealHead(

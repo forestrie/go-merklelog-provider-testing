@@ -10,27 +10,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// StorageMassifCommitterContext is the required context specific to the StorageVerifyingReplicator tests
-type StorageMassifCommitterContext struct {
-	BuilderFactory BuilderFactory
-}
-
 // StorageMassifCommitterFirstMassifTest covers creation of the first massif with generic storage
 func StorageMassifCommitterFirstMassifTest(
-	tc mmrtesting.ProviderTestContext,
-	sc *StorageMassifCommitterContext) {
+	tc mmrtesting.ProviderTestContext, factory BuilderFactory) {
 	var err error
 	t := tc.GetT()
 	ctx := t.Context()
 
 	logID := tc.GetG().NewLogID()
 
-	MassifHeight := uint8(3)
-	builder := sc.BuilderFactory(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
+	massifHeight := uint8(3)
+	epoch := uint32(1)
+	builder := factory()
 	builder.DeleteLog(logID)
-	var mc *massifs.MassifContext
+	var mc massifs.MassifContext
 	clock := time.Now()
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
+
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	fmt.Printf("GetAppendContext: %d\n", time.Since(clock)/time.Millisecond)
@@ -40,8 +38,7 @@ func StorageMassifCommitterFirstMassifTest(
 
 // StorageMassifCommitterAddFirstTwoLeavesTest tests adding first two leaves with generic storage
 func StorageMassifCommitterAddFirstTwoLeavesTest(
-	tc mmrtesting.ProviderTestContext,
-	sc *StorageMassifCommitterContext,
+	tc mmrtesting.ProviderTestContext, factory BuilderFactory,
 ) {
 	var err error
 	t := tc.GetT()
@@ -49,12 +46,16 @@ func StorageMassifCommitterAddFirstTwoLeavesTest(
 
 	logID := tc.GetG().NewLogID()
 
-	MassifHeight := uint8(3)
-	b := sc.BuilderFactory(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
-	b.DeleteLog(logID)
+	massifHeight := uint8(3)
+	epoch := uint32(1)
 
-	var mc *massifs.MassifContext
-	if mc, err = b.MassifCommitter.GetAppendContext(ctx); err != nil {
+	builder := factory()
+	builder.DeleteLog(logID)
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
+
+	var mc massifs.MassifContext
+	if mc, err = massifs.GetAppendContext(
+		ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
@@ -62,11 +63,12 @@ func StorageMassifCommitterAddFirstTwoLeavesTest(
 	// those that cover the mmr construction and how the massifs link together
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, 0, 2)
 
-	err = b.MassifCommitter.CommitContext(ctx, mc)
+	err = massifs.CommitContext(ctx, builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// Ensure what we read back passes the commit checks
-	if _, err = b.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if _, err = massifs.GetAppendContext(
+		ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 }
@@ -74,7 +76,7 @@ func StorageMassifCommitterAddFirstTwoLeavesTest(
 // StorageMassifCommitterExtendAndCommitFirstTest tests massif extension with generic storage
 func StorageMassifCommitterExtendAndCommitFirstTest(
 	tc mmrtesting.ProviderTestContext,
-	sc *StorageMassifCommitterContext,
+	factory BuilderFactory,
 ) {
 	var err error
 	t := tc.GetT()
@@ -82,20 +84,23 @@ func StorageMassifCommitterExtendAndCommitFirstTest(
 
 	logID := tc.GetG().NewLogID()
 
-	MassifHeight := uint8(3)
-	builder := sc.BuilderFactory(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
-	builder.DeleteLog(logID)
+	massifHeight := uint8(3)
+	epoch := uint32(1)
 
-	var mc *massifs.MassifContext
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	builder := factory()
+	builder.DeleteLog(logID)
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
+
+	var mc massifs.MassifContext
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// add 3 entries, leaving space for two more logs
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, 0, 3)
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, false)
@@ -104,30 +109,32 @@ func StorageMassifCommitterExtendAndCommitFirstTest(
 // StorageMassifCommitterCompleteFirstTest tests massif completion with generic storage
 func StorageMassifCommitterCompleteFirstTest(
 	tc mmrtesting.ProviderTestContext,
-	sc *StorageMassifCommitterContext,
+	factory BuilderFactory,
 ) {
 	var err error
 	t := tc.GetT()
 	ctx := t.Context()
 
 	logID := tc.GetG().NewLogID()
-	MassifHeight := uint8(3)
-	builder := sc.BuilderFactory(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
+	massifHeight := uint8(3)
+	epoch := uint32(massifs.Epoch2038)
+	builder := factory()
 	builder.DeleteLog(logID)
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
-	var mc *massifs.MassifContext
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	var mc massifs.MassifContext
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	first := 0
 	// add first two entries, representing the first actual leaf and the interior root node it creates
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 2)
 	first += 2
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// Ensure what we read back passes the commit checks
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, false)
@@ -135,11 +142,11 @@ func StorageMassifCommitterCompleteFirstTest(
 	// add 5 entries, completing the first massif
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 5)
 	first += 5
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// Ensure that when we ask for a new context, we get an empty one that is in create mode.
-	if mc, err = builder.MassifCommitter.GetAppendContext(t.Context()); err != nil {
+	if mc, err = massifs.GetAppendContext(t.Context(), builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, true)
@@ -147,8 +154,7 @@ func StorageMassifCommitterCompleteFirstTest(
 
 // StorageMassifCommitterOverfillSafeTest tests overfill protection with generic storage
 func StorageMassifCommitterOverfillSafeTest(
-	tc mmrtesting.ProviderTestContext,
-	sc *StorageMassifCommitterContext) {
+	tc mmrtesting.ProviderTestContext, factory BuilderFactory) {
 
 	var err error
 	t := tc.GetT()
@@ -156,19 +162,22 @@ func StorageMassifCommitterOverfillSafeTest(
 
 	logID := tc.GetG().NewLogID()
 
-	MassifHeight := uint8(3)
-	builder := sc.BuilderFactory(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
-	builder.DeleteLog(logID)
+	massifHeight := uint8(3)
+	epoch := uint32(massifs.Epoch2038)
 
-	var mc *massifs.MassifContext
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	builder := factory()
+	builder.DeleteLog(logID)
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
+
+	var mc massifs.MassifContext
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	first := 0
 	// add first two entries, representing the first actual leaf and the interior root node it creates
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 2)
 	first += 2
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// Test context reuse - this should work just like the original implementation
@@ -176,12 +185,12 @@ func StorageMassifCommitterOverfillSafeTest(
 
 	// add 3 entries, leaving space for two more logs (reusing same context)
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 3)
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// add 5 entries, over filling the first massif (still reusing same context)
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 5)
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	if err == nil {
 		t.Fatalf("overfilled massif")
 	}
@@ -190,7 +199,7 @@ func StorageMassifCommitterOverfillSafeTest(
 // StorageMassifCommitterThreeMassifsTest tests three massifs scenario with generic storage
 func StorageMassifCommitterThreeMassifsTest(
 	tc mmrtesting.ProviderTestContext,
-	sc *StorageMassifCommitterContext) {
+	factory BuilderFactory) {
 
 	var err error
 	t := tc.GetT()
@@ -199,15 +208,17 @@ func StorageMassifCommitterThreeMassifsTest(
 	logID := tc.GetG().NewLogID()
 
 	// Height of 3 means each massif will contain 7 nodes.
-	MassifHeight := uint8(3)
+	massifHeight := uint8(3)
+	epoch := uint32(massifs.Epoch2038)
 
-	builder := sc.BuilderFactory(massifs.StorageOptions{LogID: logID, MassifHeight: MassifHeight})
+	builder := factory()
 	builder.DeleteLog(logID)
+	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
 	// --- Massif 0
 
-	var mc *massifs.MassifContext
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	var mc massifs.MassifContext
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
@@ -217,7 +228,7 @@ func StorageMassifCommitterThreeMassifsTest(
 	first += 7
 	require.Equal(t, uint64(7), mc.RangeCount())
 
-	err = builder.MassifCommitter.CommitContext(t.Context(), mc)
+	err = massifs.CommitContext(t.Context(), builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// --- Massif 1
@@ -225,7 +236,7 @@ func StorageMassifCommitterThreeMassifsTest(
 	// get the next context, it should be a 'creating' context. This is an edge
 	// case as massif 0 is always exactly filled - the mmr root and the massif
 	// root are the same only for this blob
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, true)
@@ -240,13 +251,13 @@ func StorageMassifCommitterThreeMassifsTest(
 	require.Equal(t, uint64(15), mc.RangeCount())
 
 	// commit it
-	err = builder.MassifCommitter.CommitContext(ctx, mc)
+	err = massifs.CommitContext(ctx, builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// --- Massif 2
 
 	// get the context for the third, this should also be creating
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, true)
@@ -258,11 +269,11 @@ func StorageMassifCommitterThreeMassifsTest(
 	first += 7
 	require.Equal(t, uint64(22), mc.RangeCount())
 
-	err = builder.MassifCommitter.CommitContext(ctx, mc)
+	err = massifs.CommitContext(ctx, builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
 	// --- Massif 3
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Start.FirstIndex, uint64(22))
@@ -270,10 +281,10 @@ func StorageMassifCommitterThreeMassifsTest(
 
 	// *part* fill it
 	mc.Data = tc.PadWithNumberedLeaves(mc.Data, first, 2)
-	err = builder.MassifCommitter.CommitContext(ctx, mc)
+	err = massifs.CommitContext(ctx, builder.ObjectWriter, &mc)
 	assert.Nil(t, err)
 
-	if mc, err = builder.MassifCommitter.GetAppendContext(ctx); err != nil {
+	if mc, err = massifs.GetAppendContext(ctx, builder.ObjectReader, epoch, massifHeight); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	assert.Equal(t, mc.Creating, false)
