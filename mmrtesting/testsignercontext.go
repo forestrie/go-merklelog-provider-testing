@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/cbor"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/cose"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
+	"github.com/forestrie/go-merklelog/massifs"
+	"github.com/forestrie/go-merklelog/massifs/cbor"
+	"github.com/forestrie/go-merklelog/massifs/cose"
+	"github.com/forestrie/go-merklelog/massifs/storage"
 	"github.com/stretchr/testify/assert"
 )
 

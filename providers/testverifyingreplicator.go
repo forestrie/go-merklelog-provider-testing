@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
-	"github.com/datatrails/go-datatrails-merklelog/mmr"
+	"github.com/forestrie/go-merklelog/massifs"
+	"github.com/forestrie/go-merklelog/massifs/storage"
+	"github.com/forestrie/go-merklelog/mmr"
 	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

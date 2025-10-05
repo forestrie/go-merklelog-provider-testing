@@ -1,8 +1,8 @@
 package mmrtesting
 
 import (
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	dttesting "github.com/forestrie/go-merklelog-datatrails/testing"
+	"github.com/forestrie/go-merklelog/massifs/storage"
 	"github.com/stretchr/testify/require"
 )
 

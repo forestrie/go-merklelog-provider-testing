@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	commoncbor "github.com/datatrails/go-datatrails-merklelog/massifs/cbor"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/snowflakeid"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
+	"github.com/forestrie/go-merklelog/massifs"
+	commoncbor "github.com/forestrie/go-merklelog/massifs/cbor"
+	"github.com/forestrie/go-merklelog/massifs/snowflakeid"
+	"github.com/forestrie/go-merklelog/massifs/storage"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )

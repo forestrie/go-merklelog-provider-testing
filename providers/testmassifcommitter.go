@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datatrails/go-datatrails-merklelog/massifs"
+	"github.com/forestrie/go-merklelog/massifs"
 	"github.com/robinbryce/go-merklelog-provider-testing/mmrtesting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

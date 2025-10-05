@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datatrails/go-datatrails-merklelog/massifs"
-	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
-	"github.com/datatrails/go-datatrails-merklelog/mmr"
 	"github.com/forestrie/go-merklelog-datatrails/datatrails"
+	"github.com/forestrie/go-merklelog/massifs"
+	"github.com/forestrie/go-merklelog/massifs/storage"
+	"github.com/forestrie/go-merklelog/mmr"
 	"github.com/stretchr/testify/require"
 
 	// TODO: phase this out
