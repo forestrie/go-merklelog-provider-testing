@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	commoncbor "github.com/datatrails/go-datatrails-common/cbor"
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
+	commoncbor "github.com/datatrails/go-datatrails-merklelog/massifs/cbor"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/snowflakeid"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/google/uuid"

@@ -17,7 +17,7 @@ func TestGenerateECKey(t *testing.T, curve elliptic.Curve) ecdsa.PrivateKey {
 }
 
 func TestNewRootSigner(t *testing.T, issuer string) massifs.RootSigner {
-	cborCodec, err := massifs.NewRootSignerCodec()
+	cborCodec, err := massifs.NewCBORCodec()
 	require.NoError(t, err)
 	rs := massifs.NewRootSigner(issuer, cborCodec)
 	return rs

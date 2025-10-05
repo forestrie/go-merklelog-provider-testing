@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/datatrails/go-datatrails-common/cbor"
-	"github.com/datatrails/go-datatrails-common/cose"
 	"github.com/datatrails/go-datatrails-merklelog/massifs"
+	"github.com/datatrails/go-datatrails-merklelog/massifs/cbor"
+	"github.com/datatrails/go-datatrails-merklelog/massifs/cose"
 	"github.com/datatrails/go-datatrails-merklelog/massifs/storage"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,7 +29,7 @@ func NewTestSignerContext(t *testing.T, issuer string) *TestSignerContext {
 		RootSigner: TestNewRootSigner(t, issuer),
 		CoseSigner: cose.NewTestCoseSigner(t, key),
 	}
-	s.RootSignerCodec, err = massifs.NewRootSignerCodec()
+	s.RootSignerCodec, err = massifs.NewCBORCodec()
 	assert.NoError(t, err)
 
 	return s

@@ -327,7 +327,7 @@ func (tc *TestContext[E]) SealIndex(
 	err = mc.CreatePeakStackMap()
 	require.NoError(tc.T, err)
 
-	codec, err := massifs.NewRootSignerCodec()
+	codec, err := massifs.NewCBORCodec()
 	require.NoError(tc.T, err)
 
 	chk, err := massifs.GetCheckpoint(ctx, store, codec, massifIndex)
@@ -431,7 +431,7 @@ func (tc *TestContext[E]) SealContext(
 		CommitmentEpoch: mc.Start.CommitmentEpoch,
 		IDTimestamp:     lastIDTimestamp,
 	}
-	cborCodec, err := massifs.NewRootSignerCodec()
+	cborCodec, err := massifs.NewCBORCodec()
 	require.NoError(tc.T, err)
 
 	rootSigner := massifs.NewRootSigner("https://github.com/robinbryce/veracity", cborCodec)
