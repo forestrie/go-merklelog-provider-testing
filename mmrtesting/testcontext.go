@@ -434,7 +434,7 @@ func (tc *TestContext[E]) SealContext(
 	cborCodec, err := massifs.NewCBORCodec()
 	require.NoError(tc.T, err)
 
-	rootSigner := massifs.NewRootSigner("https://github.com/robinbryce/veracity", cborCodec)
+	rootSigner := massifs.NewRootSigner("https://github.com/forestrie/veracity", cborCodec)
 
 	data, err := rootSigner.Sign1(
 		tc.Cfg.Signer,

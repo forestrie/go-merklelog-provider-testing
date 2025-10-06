@@ -1,4 +1,4 @@
-module github.com/robinbryce/go-merklelog-provider-testing
+module github.com/forestrie/go-merklelog-provider-testing
 
 go 1.24.0
 
