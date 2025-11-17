@@ -24,6 +24,12 @@ func StoragePeakStackStartNextMassifTest(
 	mc.Data = append(mc.Data, mc.InitIndexData()...)
 	require.Nil(t, err)
 
+	// For version 1+, pad the fixed peak stack allocation
+	if mc.Start.Version > 0 {
+		padBytes := make([]byte, massifs.MaxMMRHeight*massifs.ValueBytes-(mc.Start.PeakStackLen*massifs.ValueBytes))
+		mc.Data = append(mc.Data, padBytes...)
+	}
+
 	// The following two helpers assist checking consistency between the
 	// ancestor peak stack and the log
 	getFromData := func(mc massifs.MassifContext, i uint64) []byte {
