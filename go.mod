@@ -12,8 +12,6 @@ replace (
 	github.com/go-merklelog/mmr => ../go-merklelog/mmr
 )
 
-replace github.com/datatrails/go-datatrails-simplehash => ../go-datatrails-simplehash
-
 require (
 	github.com/datatrails/go-datatrails-common v0.30.0
 	github.com/forestrie/go-merklelog-datatrails v0.0.0-00010101000000-000000000000
@@ -26,7 +24,7 @@ require (
 
 require (
 	github.com/datatrails/go-datatrails-common-api-gen v0.8.0 // indirect
-	github.com/datatrails/go-datatrails-simplehash v0.0.0-20241001114049-90fd7a82596f // indirect
+	github.com/datatrails/go-datatrails-simplehash v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect

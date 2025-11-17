@@ -1,5 +1,7 @@
 github.com/datatrails/go-datatrails-common-api-gen v0.8.0 h1:vO+s0h1SZMQv89240Fxok/vsJU4Oo/jHO5rbOVnj/pA=
 github.com/datatrails/go-datatrails-common-api-gen v0.8.0/go.mod h1:ekmas39HNTCa011DG54jaKTVFh9XpAYZqITE414bD9U=
+github.com/datatrails/go-datatrails-simplehash v0.2.0 h1:dxr3li6DSPrjok8RcavOGr6iTstFei/EIkzr6/IKcLQ=
+github.com/datatrails/go-datatrails-simplehash v0.2.0/go.mod h1:2/2e9QtNqxBSt9mKJeBb6iR1PXE6evaHGxcdcXxUrog=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/envoyproxy/protoc-gen-validate v1.2.1 h1:DEo3O99U8j4hBFwbJfrz9VtgcDfUKS7KJ7spH3d86P8=
