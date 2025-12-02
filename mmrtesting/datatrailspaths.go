@@ -31,6 +31,24 @@ func (d DatatrailsPathPrefixProvider) Prefix(logID storage.LogID, otype storage.
 	}
 }
 
+// PrefixWithHeight returns the base path format (without service-specific prefix) for testing.
+// Returns: {massifHeight}/{uuid}/ for both massifs and checkpoints.
+func (d DatatrailsPathPrefixProvider) PrefixWithHeight(logID storage.LogID, massifHeight uint8, otype storage.ObjectType) (string, error) {
+	// Convert LogID to UUID string (without "tenant/" prefix for base format)
+	uuidStr := fmt.Sprintf("%s", uuid.UUID(logID))
+	
+	switch otype {
+	case storage.ObjectMassifStart, storage.ObjectMassifData, storage.ObjectPathMassifs:
+		// Base format: {massifHeight}/{uuid}/
+		return fmt.Sprintf("%d/%s/", massifHeight, uuidStr), nil
+	case storage.ObjectCheckpoint, storage.ObjectPathCheckpoints:
+		// Base format: {massifHeight}/{uuid}/ (same for checkpoints)
+		return fmt.Sprintf("%d/%s/", massifHeight, uuidStr), nil
+	default:
+		return "", fmt.Errorf("unknown object type %v", otype)
+	}
+}
+
 // LogID from the storage path according to the datatrails massif storage schema.
 // The storage path is expected to be in the format:
 // /v1/mmrs/tenant/<tenant_uuid>/<log_instance>/massifs/
