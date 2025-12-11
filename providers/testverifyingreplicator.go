@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/forestrie/go-merklelog-provider-testing/mmrtesting"
 	"github.com/forestrie/go-merklelog/massifs"
 	"github.com/forestrie/go-merklelog/massifs/storage"
 	"github.com/forestrie/go-merklelog/mmr"
-	"github.com/forestrie/go-merklelog-provider-testing/mmrtesting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -57,8 +57,8 @@ func StorageVerifyingReplicatorSinkExtension(
 			// tc.GenerateTenantLog(10, massifHeight, 0 /* leaf type plain */)
 			logId0 := tc.GetG().NewLogID()
 
-			sourceBuilder := sourceFactory()
-			sinkBuilder := sinkFactory()
+			sourceBuilder := sourceFactory(tt.massifHeight)
+			sinkBuilder := sinkFactory(tt.massifHeight)
 			sourceBuilder.SelectLog(ctx, logId0)
 			sinkBuilder.SelectLog(ctx, logId0)
 
@@ -99,8 +99,8 @@ func StorageVerifyingReplicatorSinkExtension(
 			vr := massifs.VerifyingReplicator{
 				CBORCodec:    tc.GetTestCfg().CBORCodec,
 				COSEVerifier: tc.GetTestCfg().COSEVerifier,
-				Source:       sourceFactory().ObjectReader,
-				Sink:         sinkFactory().ObjectReaderWriter,
+				Source:       sourceFactory(tt.massifHeight).ObjectReader,
+				Sink:         sinkFactory(tt.massifHeight).ObjectReaderWriter,
 			}
 			// note: firstUpdateMassifs is the count of *full* massifs we add before adding the leaves, so the count is also the "index" of the last massif.
 			err := vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(tt.firstUpdateMassifs))
@@ -114,7 +114,7 @@ func StorageVerifyingReplicatorSinkExtension(
 				// CreateLog always deleted blobs, so we can only use AddLeavesToLog here
 				for range tt.secondUpdateMassifs {
 					tc.AddLeaves(
-						ctx, sourceFactory(),
+						ctx, sourceFactory(tt.massifHeight),
 						logId0, tt.massifHeight,
 						(tt.firstUpdateMassifs*leavesPerMassif)+tt.firstUpdateExtraLeaves,
 						leavesPerMassif,
@@ -124,7 +124,7 @@ func StorageVerifyingReplicatorSinkExtension(
 
 			if tt.secondUpdateExtraLeaves > 0 {
 				tc.AddLeaves(
-					ctx, sourceFactory(),
+					ctx, sourceFactory(tt.massifHeight),
 					logId0, tt.massifHeight,
 					(tt.firstUpdateMassifs*leavesPerMassif)+(tt.secondUpdateMassifs*leavesPerMassif)+tt.firstUpdateExtraLeaves,
 					tt.secondUpdateExtraLeaves,
@@ -134,8 +134,8 @@ func StorageVerifyingReplicatorSinkExtension(
 			vr = massifs.VerifyingReplicator{
 				CBORCodec:    tc.GetTestCfg().CBORCodec,
 				COSEVerifier: tc.GetTestCfg().COSEVerifier,
-				Source:       sourceFactory().ObjectReader,
-				Sink:         sinkFactory().ObjectReaderWriter,
+				Source:       sourceFactory(tt.massifHeight).ObjectReader,
+				Sink:         sinkFactory(tt.massifHeight).ObjectReaderWriter,
 			}
 			// note: firstUpdateMassifs is the count of *full* massifs we add before adding the leaves, so the count is also the "index" of the last massif.
 			err = vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs))
@@ -146,8 +146,8 @@ func StorageVerifyingReplicatorSinkExtension(
 
 			// Attempt to replicate again, this will verify the sink state and then do nothing
 			vr = massifs.VerifyingReplicator{
-				Source: sourceFactory().ObjectReader,
-				Sink:   sinkFactory().ObjectReaderWriter,
+				Source: sourceFactory(tt.massifHeight).ObjectReader,
+				Sink:   sinkFactory(tt.massifHeight).ObjectReaderWriter,
 			}
 			// note: firstUpdateMassifs is the count of *full* massifs we add before adding the leaves, so the count is also the "index" of the last massif.
 			err = vr.ReplicateVerifiedUpdates(ctx, uint32(0), uint32(tt.firstUpdateMassifs+tt.secondUpdateMassifs))
@@ -198,8 +198,8 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 	// re-produce the root needed for the local seal to verify.
 	logId0 := tc.GetG().NewLogID()
 
-	sourceBuilder := sourceFactory()
-	sinkBuilder := sinkFactory()
+	sourceBuilder := sourceFactory(massifHeight)
+	sinkBuilder := sinkFactory(massifHeight)
 	sourceBuilder.SelectLog(ctx, logId0)
 	sinkBuilder.SelectLog(ctx, logId0)
 
@@ -241,8 +241,8 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 		tc.AddLeaves(ctx, sourceBuilder, logId0, massifHeight, uint64(uint64(i)*leavesPerMassif), uint64(leavesPerMassif))
 	}
 
-	sourceBuilder = sourceFactory()
-	sinkBuilder = sinkFactory()
+	sourceBuilder = sourceFactory(massifHeight)
+	sinkBuilder = sinkFactory(massifHeight)
 	sourceBuilder.SelectLog(ctx, logId0)
 	sinkBuilder.SelectLog(ctx, logId0)
 

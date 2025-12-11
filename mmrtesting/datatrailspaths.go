@@ -36,7 +36,7 @@ func (d DatatrailsPathPrefixProvider) Prefix(logID storage.LogID, otype storage.
 func (d DatatrailsPathPrefixProvider) PrefixWithHeight(logID storage.LogID, massifHeight uint8, otype storage.ObjectType) (string, error) {
 	// Convert LogID to UUID string (without "tenant/" prefix for base format)
 	uuidStr := fmt.Sprintf("%s", uuid.UUID(logID))
-	
+
 	switch otype {
 	case storage.ObjectMassifStart, storage.ObjectMassifData, storage.ObjectPathMassifs:
 		// Base format: {massifHeight}/{uuid}/

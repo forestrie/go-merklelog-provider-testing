@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 
+	"github.com/forestrie/go-merklelog-provider-testing/mmrtesting"
 	"github.com/forestrie/go-merklelog/massifs"
 	"github.com/forestrie/go-merklelog/mmr"
-	"github.com/forestrie/go-merklelog-provider-testing/mmrtesting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -407,7 +407,7 @@ func StoragePeakStackHeight4Massif2to3Size63Test(
 
 	massifHeight := uint8(4)
 
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	builder.SelectLog(ctx, logID) // select the log for reader/writer
 

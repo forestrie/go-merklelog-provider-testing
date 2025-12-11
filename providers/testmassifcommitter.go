@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/forestrie/go-merklelog/massifs"
 	"github.com/forestrie/go-merklelog-provider-testing/mmrtesting"
+	"github.com/forestrie/go-merklelog/massifs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +21,7 @@ func StorageMassifCommitterFirstMassifTest(
 
 	massifHeight := uint8(3)
 	epoch := uint32(1)
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	var mc massifs.MassifContext
 	clock := time.Now()
@@ -49,7 +49,7 @@ func StorageMassifCommitterAddFirstTwoLeavesTest(
 	massifHeight := uint8(3)
 	epoch := uint32(1)
 
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
@@ -87,7 +87,7 @@ func StorageMassifCommitterExtendAndCommitFirstTest(
 	massifHeight := uint8(3)
 	epoch := uint32(1)
 
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
@@ -118,7 +118,7 @@ func StorageMassifCommitterCompleteFirstTest(
 	logID := tc.GetG().NewLogID()
 	massifHeight := uint8(3)
 	epoch := uint32(massifs.Epoch2038)
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
@@ -165,7 +165,7 @@ func StorageMassifCommitterOverfillSafeTest(
 	massifHeight := uint8(3)
 	epoch := uint32(massifs.Epoch2038)
 
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
@@ -211,7 +211,7 @@ func StorageMassifCommitterThreeMassifsTest(
 	massifHeight := uint8(3)
 	epoch := uint32(massifs.Epoch2038)
 
-	builder := factory()
+	builder := factory(massifHeight)
 	builder.DeleteLog(logID)
 	builder.SelectLog(ctx, logID) // select the log for reader/writer
 
