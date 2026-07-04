@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/forestrie/go-merklelog/massifs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,11 +13,4 @@ func TestGenerateECKey(t *testing.T, curve elliptic.Curve) ecdsa.PrivateKey {
 	privateKey, err := ecdsa.GenerateKey(curve, rand.Reader)
 	require.NoError(t, err)
 	return *privateKey
-}
-
-func TestNewRootSigner(t *testing.T, issuer string) massifs.RootSigner {
-	cborCodec, err := massifs.NewCBORCodec()
-	require.NoError(t, err)
-	rs := massifs.NewRootSigner(issuer, cborCodec)
-	return rs
 }

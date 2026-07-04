@@ -15,7 +15,13 @@ import (
 
 // TestOptions holds options generic for all storage implementations.
 type TestOptions struct {
-	massifs.SignerOptions
+	// Checkpoint signing configuration (format-v3 receipts). If Key is set it
+	// is used to create the Signer; otherwise an ephemeral P-256 key is
+	// generated unless DisableSigning is set.
+	Signer              cose.Signer
+	PubKey              *ecdsa.PublicKey
+	Key                 *ecdsa.PrivateKey
+	Alg                 cose.Algorithm
 	CBORCodec           commoncbor.CBORCodec
 	COSEVerifier        cose.Verifier
 	DefaultMassifHeight uint8
@@ -144,19 +150,25 @@ func WithDefaults() massifs.Option {
 					return
 				}
 				options.Key = privateKey
-				options.PubKey = &privateKey.PublicKey
-				options.Signer, err = cose.NewSigner(cose.AlgorithmES256, options.Key)
-				if err != nil {
-					options.errs = append(options.errs, fmt.Errorf("failed to create signer: %w", err))
-				}
-			} else {
-				var err error
-				options.PubKey = &options.Key.PublicKey
-				options.Signer, err = cose.NewSigner(options.Alg, options.Key)
-				if err != nil {
-					options.errs = append(options.errs, fmt.Errorf("failed to create signer: %w", err))
-				}
+				options.Alg = cose.AlgorithmES256
+			} else if options.Alg == 0 {
+				options.Alg = cose.AlgorithmES256
 			}
+			var err error
+			options.PubKey = &options.Key.PublicKey
+			options.Signer, err = cose.NewSigner(options.Alg, options.Key)
+			if err != nil {
+				options.errs = append(options.errs, fmt.Errorf("failed to create signer: %w", err))
+			}
+		}
+		// Format-v3 checkpoint verification requires an explicit verifier
+		// (receipts carry no key material); derive it from the signing key.
+		if options.COSEVerifier == nil && options.PubKey != nil {
+			verifier, err := cose.NewVerifier(options.Alg, options.PubKey)
+			if err != nil {
+				options.errs = append(options.errs, fmt.Errorf("failed to create verifier: %w", err))
+			}
+			options.COSEVerifier = verifier
 		}
 	}
 }

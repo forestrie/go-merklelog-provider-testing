@@ -3,75 +3,58 @@ package mmrtesting
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"fmt"
 	"testing"
 
 	"github.com/forestrie/go-merklelog/massifs"
-	"github.com/forestrie/go-merklelog/massifs/cbor"
 	"github.com/forestrie/go-merklelog/massifs/cose"
 	"github.com/forestrie/go-merklelog/massifs/storage"
-	"github.com/stretchr/testify/assert"
 )
 
+// TestSignerContext is a self-contained checkpoint signer for tests: an
+// ephemeral P-256 key wrapped in a COSE signer producing format-v3
+// checkpoint receipts.
 type TestSignerContext struct {
-	Key             ecdsa.PrivateKey
-	RootSigner      massifs.RootSigner
-	CoseSigner      *cose.TestCoseSigner
-	RootSignerCodec cbor.CBORCodec
+	Key        ecdsa.PrivateKey
+	CoseSigner *cose.TestCoseSigner
 }
 
 func NewTestSignerContext(t *testing.T, issuer string) *TestSignerContext {
-	var err error
-
+	_ = issuer // v3 receipts carry no issuer claims; retained for call-site compatibility
 	key := TestGenerateECKey(t, elliptic.P256())
-	s := &TestSignerContext{
+	return &TestSignerContext{
 		Key:        key,
-		RootSigner: TestNewRootSigner(t, issuer),
 		CoseSigner: cose.NewTestCoseSigner(t, key),
 	}
-	s.RootSignerCodec, err = massifs.NewCBORCodec()
-	assert.NoError(t, err)
-
-	return s
 }
 
-func (s *TestSignerContext) SignedState(
+// SealedState signs a format-v3 checkpoint receipt committing to the provided
+// (size, peaks) state, using the degenerate first-checkpoint proof shape
+// (tree-size-1 = 0), and returns it decoded. Callers verifying against log
+// data recover the accumulator from the massif as usual.
+func (s *TestSignerContext) SealedState(
 	logID storage.LogID, massifIndex uint64, state massifs.MMRState,
-) (*cose.CoseSign1Message, massifs.MMRState, error) {
-	subject := fmt.Sprintf(storage.V1MMRBlobNameFmt, massifIndex)
-	data, err := signState(s.RootSigner, s.CoseSigner, subject, state)
-	if err != nil {
-		return nil, massifs.MMRState{}, err
-	}
-	return massifs.DecodeSignedRoot(s.RootSignerCodec, data)
-}
-
-func (s *TestSignerContext) SealedState(logID storage.LogID, massifIndex uint64, state massifs.MMRState) (*massifs.Checkpoint, error) {
-	signed, state, err := s.SignedState(logID, massifIndex, state)
+) (*massifs.Checkpoint, error) {
+	_ = logID
+	_ = massifIndex
+	data, err := s.SignCheckpoint(state)
 	if err != nil {
 		return nil, err
 	}
-	return &massifs.Checkpoint{
-		Sign1Message: *signed,
-		MMRState:     state,
-	}, nil
-}
-
-func signState(
-	rootSigner massifs.RootSigner,
-	coseSigner massifs.IdentifiableCoseSigner,
-	subject string,
-	state massifs.MMRState,
-) ([]byte, error) {
-	publicKey, err := coseSigner.LatestPublicKey()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get public key for signing key %w", err)
-	}
-
-	keyIdentifier := coseSigner.KeyIdentifier()
-	data, err := rootSigner.Sign1(coseSigner, keyIdentifier, publicKey, subject, state, nil)
+	checkpt, err := massifs.NewCheckpoint(data)
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
+	return &checkpt, nil
+}
+
+// SignCheckpoint signs and encodes a format-v3 checkpoint receipt for the
+// provided (size, peaks) state.
+func (s *TestSignerContext) SignCheckpoint(state massifs.MMRState) ([]byte, error) {
+	proof := massifs.ConsistencyProof{
+		TreeSize1:  0,
+		TreeSize2:  state.MMRSize,
+		Paths:      [][][]byte{},
+		RightPeaks: state.Peaks,
+	}
+	return massifs.SignCheckpointReceipt(s.CoseSigner, proof, state.Peaks)
 }

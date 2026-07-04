@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/forestrie/go-merklelog-datatrails/datatrails"
 	"github.com/forestrie/go-merklelog/massifs"
@@ -327,10 +326,7 @@ func (tc *TestContext[E]) SealIndex(
 	err = mc.CreatePeakStackMap()
 	require.NoError(tc.T, err)
 
-	codec, err := massifs.NewCBORCodec()
-	require.NoError(tc.T, err)
-
-	chk, err := massifs.GetCheckpoint(ctx, store, codec, massifIndex)
+	chk, err := massifs.GetCheckpoint(ctx, store, massifIndex)
 	if err != nil {
 		if errors.Is(err, storage.ErrDoesNotExist) || errors.Is(err, storage.ErrLogEmpty) {
 			return tc.SealContext(ctx, store, &mc, &chk)
@@ -338,7 +334,7 @@ func (tc *TestContext[E]) SealIndex(
 		return nil, err
 	}
 
-	if chk.MMRState.MMRSize < mc.RangeCount() {
+	if chk.MMRSize < mc.RangeCount() {
 		return tc.SealContext(ctx, store, &mc, &chk)
 	}
 	// already sealed (the equals case), or the seal is ahead of the massif.
@@ -393,70 +389,27 @@ func (tc *TestContext[E]) SealContext(
 
 	mmrSizeNew := mc.RangeCount()
 
-	if false && chk != nil {
-		var ok bool
-		mmrFromIndex := uint64(0)
-		mmrFromIndex = chk.MMRState.MMRSize - 1
-		cp, err := mmr.IndexConsistencyProof(mc, mmrFromIndex, mmrSizeNew-1)
-		if err != nil {
-			require.NoError(tc.T, err)
-		}
-
-		// a := massifs.TreeCount(mc.Start.MassifHeight)
-		// b := massifs.MassifIndexFromMMRIndex(mc.Start.MassifHeight, mmrFromIndex)
-		// c := massifs.MassifIndexFromMMRIndex(mc.Start.MassifHeight, mmrSizeNew-1)
-		// fmt.Printf("a %d, b %d, c %d\n", a, b, c)
-
-		chkPeaks, err := mmr.PeakHashes(mc, chk.MMRState.MMRSize-1)
-		require.NoError(tc.T, err)
-
-		ok, peaksB, err = mmr.CheckConsistency(
-			mc, sha256.New(),
-			cp.MMRSizeA, cp.MMRSizeB, chkPeaks)
-
-		require.NoError(tc.T, err)
-		require.True(tc.T, ok, "consistency check failed: verify failed")
-	} else {
-		// Just sign the peaks as is. Clearly this is unsafe unless the caller knows what they are doing.
-		peaksB, err = mmr.PeakHashes(mc, mmrSizeNew-1)
-		require.NoError(tc.T, err)
-	}
-	lastIDTimestamp := mc.GetLastIDTimestamp()
-
-	state := massifs.MMRState{
-		Version:         int(massifs.MMRStateVersionCurrent),
-		MMRSize:         mmrSizeNew,
-		Peaks:           peaksB,
-		Timestamp:       time.Now().UnixMilli(),
-		CommitmentEpoch: mc.Start.CommitmentEpoch,
-		IDTimestamp:     lastIDTimestamp,
-	}
-	cborCodec, err := massifs.NewCBORCodec()
+	peaksB, err = mmr.PeakHashes(mc, mmrSizeNew-1)
 	require.NoError(tc.T, err)
 
-	rootSigner := massifs.NewRootSigner("https://github.com/forestrie/veracity", cborCodec)
-
-	data, err := rootSigner.Sign1(
-		tc.Cfg.Signer,
-		DefaultCheckpointIssuer,
-		tc.Cfg.PubKey,
-		"test-log-checkpoint",
-		state, nil,
-	)
+	// Chain the consistency proof from the previous seal when there is one
+	// and the log has advanced; otherwise use the first-checkpoint shape.
+	// (Re-sealing an unchanged log re-issues the first-checkpoint form.)
+	fromSize := uint64(0)
+	if chk != nil && chk.MMRSize < mmrSizeNew {
+		fromSize = chk.MMRSize
+	}
+	proof, err := massifs.BuildConsistencyProof(mc, fromSize, mmrSizeNew)
 	require.NoError(tc.T, err)
 
-	// Write checkpoint directly using Azure blob storage
-	// storagePath, err := tc.PathProvider.GetStoragePath(mc.Start.MassifIndex, storage.ObjectCheckpoint)
-	// require.NoError(tc.T, err)
+	data, err := massifs.SignCheckpointReceipt(tc.Cfg.Signer, proof, peaksB)
+	require.NoError(tc.T, err)
+
 	err = store.Put(ctx, mc.Start.MassifIndex, storage.ObjectCheckpoint, data, false)
 	require.NoError(tc.T, err)
 
 	// make the checkpoint for the next call to base itself off of
-
-	msg, state2, err := massifs.DecodeSignedRoot(cborCodec, data)
+	checkpt, err := massifs.NewCheckpoint(data)
 	require.NoError(tc.T, err)
-	return &massifs.Checkpoint{
-		Sign1Message: *msg,
-		MMRState:     state2,
-	}, nil
+	return &checkpt, nil
 }

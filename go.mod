@@ -7,16 +7,19 @@ toolchain go1.24.4
 replace (
 	github.com/datatrails/go-datatrails-common => ../go-datatrails-common
 	github.com/forestrie/go-merklelog-datatrails => ../go-merklelog-datatrails
-	github.com/go-merklelog/massifs => ../go-merklelog/massifs
-	github.com/go-merklelog/massifs/storageschema => ../go-merklelog/massifs/storageschema
-	github.com/go-merklelog/mmr => ../go-merklelog/mmr
+	github.com/forestrie/go-merklelog/bloom => ../go-merklelog/bloom
+	github.com/forestrie/go-merklelog/massifs => ../go-merklelog/massifs
+	github.com/forestrie/go-merklelog/mmr => ../go-merklelog/mmr
+	github.com/forestrie/go-merklelog/urkle => ../go-merklelog/urkle
 )
 
 require (
 	github.com/datatrails/go-datatrails-common v0.30.0
 	github.com/forestrie/go-merklelog-datatrails v0.0.0-00010101000000-000000000000
+	github.com/forestrie/go-merklelog/bloom v0.0.0-20251222122030-95beade3d4ef
 	github.com/forestrie/go-merklelog/massifs v0.0.2
 	github.com/forestrie/go-merklelog/mmr v0.0.2
+	github.com/forestrie/go-merklelog/urkle v0.0.0-20251222122030-95beade3d4ef
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
 	github.com/veraison/go-cose v1.3.0
