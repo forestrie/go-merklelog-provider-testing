@@ -97,7 +97,6 @@ func StorageVerifyingReplicatorSinkExtension(
 
 			// Replicate the log
 			vr := massifs.VerifyingReplicator{
-				CBORCodec:    tc.GetTestCfg().CBORCodec,
 				COSEVerifier: tc.GetTestCfg().COSEVerifier,
 				Source:       sourceFactory(tt.massifHeight).ObjectReader,
 				Sink:         sinkFactory(tt.massifHeight).ObjectReaderWriter,
@@ -132,7 +131,6 @@ func StorageVerifyingReplicatorSinkExtension(
 			}
 
 			vr = massifs.VerifyingReplicator{
-				CBORCodec:    tc.GetTestCfg().CBORCodec,
 				COSEVerifier: tc.GetTestCfg().COSEVerifier,
 				Source:       sourceFactory(tt.massifHeight).ObjectReader,
 				Sink:         sinkFactory(tt.massifHeight).ObjectReaderWriter,
@@ -208,7 +206,6 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 	tc.CreateLog(ctx, sourceBuilder, logId0, massifHeight, 1)
 
 	vr := massifs.VerifyingReplicator{
-		CBORCodec:    tc.GetTestCfg().CBORCodec,
 		COSEVerifier: tc.GetTestCfg().COSEVerifier,
 		Source:       sourceBuilder.ObjectReader,
 		Sink:         sinkBuilder.ObjectReaderWriter,
@@ -248,7 +245,6 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 
 	// Note: we create a new context so that implementations can be fooled by cached state
 	vr = massifs.VerifyingReplicator{
-		CBORCodec:    tc.GetTestCfg().CBORCodec,
 		COSEVerifier: tc.GetTestCfg().COSEVerifier,
 		Sink:         sinkBuilder.ObjectReaderWriter,
 		Source:       sourceBuilder.ObjectReader,
@@ -259,7 +255,7 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 	// check the 0'th massifs and seals was replicated (by the first run)
 	_, err = massifs.GetMassifContext(ctx, vr.Sink, 0)
 	require.NoError(t, err)
-	_, err = massifs.GetCheckpoint(ctx, vr.Sink, vr.CBORCodec, 0)
+	_, err = massifs.GetCheckpoint(ctx, vr.Sink, 0)
 	require.NoError(t, err)
 
 	// check the massifs from the second veracity run were NOT replicated
@@ -267,7 +263,7 @@ func StorageVerifyingReplicatorSinkTamperDetected(
 
 		_, err = massifs.GetMassifContext(ctx, vr.Sink, i)
 		require.ErrorIs(t, err, storage.ErrDoesNotExist)
-		_, err = massifs.GetCheckpoint(ctx, vr.Sink, vr.CBORCodec, i)
+		_, err = massifs.GetCheckpoint(ctx, vr.Sink, i)
 		require.NoError(t, err, storage.ErrDoesNotExist)
 	}
 }
